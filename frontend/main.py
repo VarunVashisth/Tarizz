@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import math
+from project_manager import create_project_manager  # <-- Import the function
 
 class EditableLabel:
     """Custom editable label that switches to entry on click"""
@@ -90,11 +91,14 @@ class ProjectCard:
         self.drag_start_y = 0
         self.original_index = 0
         self.current_index = 0
-        
+
+        self.project_data = {}  # Unique project data for this card
+
         # Create card frame with rounded appearance
         self.frame = tk.Frame(
             dashboard.canvas_frame, 
             bg='#3a3a3a', 
+
             relief='raised', 
             bd=0,
             padx=15, 
@@ -144,6 +148,8 @@ class ProjectCard:
         self.frame.bind('<Button-1>', self.on_click)
         self.frame.bind('<B1-Motion>', self.on_drag)
         self.frame.bind('<ButtonRelease-1>', self.on_release)
+        # Open project manager on double-click
+        self.frame.bind('<Double-Button-1>', self.on_double_click)
         
         # Bind hover events to all widgets including containers
         widgets = [self.frame, self.title_container, self.desc_container, 
@@ -155,12 +161,15 @@ class ProjectCard:
         # Bind label clicks for editing (separate from dragging)  
         self.title_editor.label.bind('<Button-1>', self.on_title_click)
         self.desc_editor.label.bind('<Button-1>', self.on_desc_click)
-    
+
+    def on_double_click(self, event):
+        """Open the project manager UI for this card in a new window"""
+        self.open_project_manager()
+
     def on_click(self, event):
         """Handle card selection and start dragging"""
         # Select this card
         self.dashboard.select_card(self)
-        
         # Start dragging
         self.is_dragging = True
         self.drag_start_x = event.x_root
@@ -173,24 +182,13 @@ class ProjectCard:
         # Store original position
         self.original_index = self.dashboard.get_card_index(self)
         
-    def on_title_click(self, event):
-        """Handle title click for editing"""
-        # Select card first
-        self.dashboard.select_card(self)
-        # Start editing title
-        self.title_editor.start_edit(event)
-        # Prevent event propagation
-        return "break"
-    
-    def on_desc_click(self, event):
-        """Handle description click for editing"""
-        # Select card first  
-        self.dashboard.select_card(self)
-        # Start editing description
-        self.desc_editor.start_edit(event)
-        # Prevent event propagation
-        return "break"
-    
+    def open_project_manager(self):
+        """Open the project manager UI for this card in a new window"""
+        win = tk.Toplevel(self.dashboard.root)
+        win.title(f"Project Manager - {self.get_title()}")
+        win.geometry("900x600")
+        create_project_manager(win, self.project_data)
+
     def on_title_click(self, event):
         """Handle title click for editing"""
         # Select card first
