@@ -2,6 +2,22 @@
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 from simple_text_editor import create_text_editor
+import fitz
+import webbrowser
+import os
+import platform
+import cv2
+from PIL import Image, ImageTk
+import shutil
+import io
+
+def open_file_with_default_app(filepath):
+    if platform.system() == "Windows":
+        os.startfile(filepath)
+    elif platform.system() == "Darwin":
+        os.system(f'open "{filepath}"')
+    else:
+        os.system(f'xdg-open "{filepath}"')
 
 def create_project_manager(parent, project_data=None):
     class ProjectManager:
@@ -169,6 +185,149 @@ def create_project_manager(parent, project_data=None):
 
                 insert_img_btn = tk.Button(toolbar, text="Insert Image", command=editor.upload_image, **btn_style)
                 insert_img_btn.pack(side='left', padx=4)
+
+                def insert_video_embed():
+                    file_path = tk.filedialog.askopenfilename(
+                        filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.webm"), ("All files", "*.*")]
+                    )
+                    if file_path:
+                        # Try to get a thumbnail from the video
+                        try:
+                            cap = cv2.VideoCapture(file_path)
+                            ret, frame = cap.read()
+                            cap.release()
+                            if ret:
+                                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                img = Image.fromarray(frame)
+                                img.thumbnail((180, 120))
+                                img_tk = ImageTk.PhotoImage(img)
+                            else:
+                                img_tk = None
+                        except Exception:
+                            img_tk = None
+
+                        # Create a frame for the embedded video widget
+                        video_frame = tk.Frame(editor.text_area, bg='#222222', bd=0)
+                        # Thumbnail or fallback
+                        if img_tk:
+                            thumb_label = tk.Label(video_frame, image=img_tk, bg='#222222')
+                            thumb_label.image = img_tk  # Keep reference
+                            thumb_label.pack(side='left')
+                        else:
+                            thumb_label = tk.Label(video_frame, text="No Preview", bg='#222222', fg='#cccccc', width=22, height=7)
+                            thumb_label.pack(side='left')
+
+                        # Play button
+                        play_btn = tk.Button(video_frame, text="▶ Play", bg='#00bfff', fg='white', relief='flat', font=('Segoe UI', 10, 'bold'), cursor='hand2')
+                        play_btn.pack(side='left', padx=8)
+
+                        # Download button
+                        download_btn = tk.Button(video_frame, text="⬇ Download", bg='#222222', fg='#00bfff', relief='flat', font=('Segoe UI', 10), cursor='hand2')
+                        download_btn.pack(side='left', padx=4)
+
+                        def play_video():
+                            # Open a simple player window using OpenCV
+                            win = tk.Toplevel(editor.text_area)
+                            win.title("Video Player")
+                            win.geometry("640x400")
+                            label = tk.Label(win)
+                            label.pack(fill='both', expand=True)
+                            cap = cv2.VideoCapture(file_path)
+                            def show_frame():
+                                ret, frame = cap.read()
+                                if ret:
+                                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                    img = Image.fromarray(frame)
+                                    img = img.resize((640, 400))
+                                    img_tk = ImageTk.PhotoImage(img)
+                                    label.imgtk = img_tk
+                                    label.config(image=img_tk)
+                                    win.after(30, show_frame)
+                                else:
+                                    cap.release()
+                            show_frame()
+                            win.protocol("WM_DELETE_WINDOW", lambda: (cap.release(), win.destroy()))
+
+                        def download_video():
+                            save_path = tk.filedialog.asksaveasfilename(defaultextension=".mp4", filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.webm"), ("All files", "*.*")])
+                            if save_path:
+                                shutil.copy(file_path, save_path)
+                                messagebox.showinfo("Download", f"Video saved to:\n{save_path}")
+
+                        play_btn.config(command=play_video)
+                        download_btn.config(command=download_video)
+
+                        editor.text_area.window_create(tk.INSERT, window=video_frame)
+
+                # Replace previous Insert Video button with embedded version
+                insert_video_btn = tk.Button(
+                    toolbar, text="Insert Video",
+                    command=insert_video_embed,
+                    **btn_style
+                )
+                insert_video_btn.pack(side='left', padx=4)
+
+                # Insert PDF button
+                def insert_media(filetypes, placeholder):
+                    file_path = tk.filedialog.askopenfilename(filetypes=filetypes)
+                    if not file_path:
+                        return
+                
+                    # Insert placeholder text (optional)
+                    editor.text_area.insert(tk.INSERT, f"[{placeholder}: {os.path.basename(file_path)}]\n")
+                
+                    try:
+                        # Open PDF and get first page
+                        media = fitz.open(file_path)
+                        page = media[0]
+                        zoom = 1.5
+                        mat = fitz.Matrix(zoom, zoom)
+                        pix = page.get_pixmap(matrix=mat)
+                
+                        # Convert pixmap to PIL Image
+                        img_data = pix.tobytes("png")  # Get raw PNG bytes
+                        image = Image.open(io.BytesIO(img_data))
+                
+                        # Optionally resize to a thumbnail
+                        image.thumbnail((150, 200))  # Keep aspect ratio
+                        tk_img = ImageTk.PhotoImage(image)
+                
+                        # Create a frame and add thumbnail inside Text widget
+                        media_frame = tk.Frame(editor.text_area, bg='#222222', bd=0)
+                        thumb_label = tk.Label(media_frame, image=tk_img, bg='#222222')
+                        thumb_label.image = tk_img  # Prevent garbage collection
+                        thumb_label.pack(side='left', padx=2, pady=2)
+                
+                        # Embed frame inside the text widget
+                        editor.text_area.window_create(tk.INSERT, window=media_frame)
+                
+                    except Exception as e:
+                        print("Error rendering PDF:", e)
+                        # Fallback: just insert text
+                        editor.text_area.insert(tk.INSERT, "[PDF Preview not available]\n")
+
+
+                    
+                insert_pdf_btn = tk.Button(
+                    toolbar, text="Insert PDF",
+                    command=lambda: insert_media(
+                        [("PDF files", "*.pdf"), ("All files", "*.*")],
+                        "📄 PDF"
+                    ),
+                    **btn_style
+                )
+                insert_pdf_btn.pack(side='left', padx=4)
+
+                # Insert Docs button
+                insert_docs_btn = tk.Button(
+                    toolbar, text="Insert Docs",
+                    command=lambda: insert_media(
+                        [("Word files", "*.doc *.docx"), ("All files", "*.*")],
+                        "📄 DOC"
+                    ),
+                    **btn_style
+                )
+                insert_docs_btn.pack(side='left', padx=4)
                 # --- End styled toolbar ---
 
                 if file_path:
@@ -237,7 +396,81 @@ def create_project_manager(parent, project_data=None):
 
                 insert_img_btn = tk.Button(toolbar, text="Insert Image", command=editor.upload_image, **btn_style)
                 insert_img_btn.pack(side='left', padx=4)
-                # --- End styled toolbar ---
+
+                def insert_video_embed():
+                    file_path = tk.filedialog.askopenfilename(
+                        filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.webm"), ("All files", "*.*")]
+                    )
+                    if file_path:
+                        try:
+                            cap = cv2.VideoCapture(file_path)
+                            ret, frame = cap.read()
+                            cap.release()
+                            if ret:
+                                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                img = Image.fromarray(frame)
+                                img.thumbnail((180, 120))
+                                img_tk = ImageTk.PhotoImage(img)
+                            else:
+                                img_tk = None
+                        except Exception:
+                            img_tk = None
+
+                        video_frame = tk.Frame(editor.text_area, bg='#222222', bd=0)
+                        if img_tk:
+                            thumb_label = tk.Label(video_frame, image=img_tk, bg='#222222')
+                            thumb_label.image = img_tk
+                            thumb_label.pack(side='left')
+                        else:
+                            thumb_label = tk.Label(video_frame, text="No Preview", bg='#222222', fg='#cccccc', width=22, height=7)
+                            thumb_label.pack(side='left')
+
+                        play_btn = tk.Button(video_frame, text="▶ Play", bg='#00bfff', fg='white', relief='flat', font=('Segoe UI', 10, 'bold'), cursor='hand2')
+                        play_btn.pack(side='left', padx=8)
+                        download_btn = tk.Button(video_frame, text="⬇ Download", bg='#222222', fg='#00bfff', relief='flat', font=('Segoe UI', 10), cursor='hand2')
+                        download_btn.pack(side='left', padx=4)
+
+                        def play_video():
+                            win = tk.Toplevel(editor.text_area)
+                            win.title("Video Player")
+                            win.geometry("640x400")
+                            label = tk.Label(win)
+                            label.pack(fill='both', expand=True)
+                            cap = cv2.VideoCapture(file_path)
+                            def show_frame():
+                                ret, frame = cap.read()
+                                if ret:
+                                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                    img = Image.fromarray(frame)
+                                    img = img.resize((640, 400))
+                                    img_tk = ImageTk.PhotoImage(img)
+                                    label.imgtk = img_tk
+                                    label.config(image=img_tk)
+                                    win.after(30, show_frame)
+                                else:
+                                    cap.release()
+                            show_frame()
+                            win.protocol("WM_DELETE_WINDOW", lambda: (cap.release(), win.destroy()))
+
+                        def download_video():
+                            save_path = tk.filedialog.asksaveasfilename(defaultextension=".mp4", filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.webm"), ("All files", "*.*")])
+                            if save_path:
+                                shutil.copy(file_path, save_path)
+                                messagebox.showinfo("Download", f"Video saved to:\n{save_path}")
+
+                        play_btn.config(command=play_video)
+                        download_btn.config(command=download_video)
+
+                        editor.text_area.window_create(tk.INSERT, window=video_frame)
+                
+
+                insert_video_btn = tk.Button(
+                    toolbar, text="Insert Video",
+                    command=insert_video_embed,
+                    **btn_style
+                )
+                insert_video_btn.pack(side='left', padx=4)
+
 
                 if file_path:
                     try:
