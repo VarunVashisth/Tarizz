@@ -4,6 +4,7 @@ from tkinter import ttk, simpledialog, messagebox
 from simple_text_editor import create_text_editor
 import fitz
 import webbrowser
+import subprocess
 import os
 import platform
 import cv2
@@ -31,19 +32,40 @@ def create_project_manager(parent, project_data=None):
             self.sidebar.configure(style='Sidebar.TFrame')
 
             style = ttk.Style()
+            style.theme_use('default')
             style.configure('Sidebar.TFrame', background='#222222')  # matte black
-            style.configure('Sidebar.Treeview', background='#222222', fieldbackground='#222222', foreground='#cccccc')
+            style.configure('Sidebar.Treeview', background='#222222', fieldbackground='#222222', borderwidth=0 ,foreground='#cccccc', relief='flat')
             style.configure('Sidebar.TButton', background='#222222', foreground='#cccccc')
+            style.map(
+                    'Sidebar.Treeview',
+                    background=[('selected', '#333333')],
+                    foreground=[('selected', '#ffffff')]
+                )
 
             self.tree = ttk.Treeview(self.sidebar, style='Sidebar.Treeview', show='tree')
             self.tree.pack(fill='both', expand=True)
             self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-            btn_frame = ttk.Frame(self.sidebar, style='Sidebar.TFrame')
-            btn_frame.pack(fill='x')
-            ttk.Button(btn_frame, text="Add Folder", command=self.add_folder, style='Sidebar.TButton').pack(fill='x')
-            ttk.Button(btn_frame, text="Add Subpage", command=self.add_subpage, style='Sidebar.TButton').pack(fill='x')
-            ttk.Button(btn_frame, text="Delete", command=self.delete, style='Sidebar.TButton').pack(fill='x')
+            btn_style = {
+                'bg': '#222222',
+                'fg': '#cccccc',
+                'activebackground': '#333333',
+                'activeforeground': '#ffffff',
+                'relief': 'flat',
+                'bd': 0,
+                'font': ('Segoe UI', 10),
+                'highlightthickness': 0,
+                'padx': 12,
+                'pady': 6,
+                'cursor': 'hand2'
+            }
+            
+            btn_frame = tk.Frame(self.sidebar, bg='#222222')
+            btn_frame.pack(fill='x', pady=4)
+            
+            tk.Button(btn_frame, text="Add Folder", command=self.add_folder, **btn_style).pack(fill='x', pady=2)
+            tk.Button(btn_frame, text="Add Subpage", command=self.add_subpage, **btn_style).pack(fill='x', pady=2)
+            tk.Button(btn_frame, text="Delete", command=self.delete, **btn_style).pack(fill='x', pady=2)
 
             # Editor container
             self.editor_container = ttk.Frame(self.root)
@@ -139,11 +161,13 @@ def create_project_manager(parent, project_data=None):
                 frame.pack(fill='both', expand=True)
                 self.current_editor_frame = frame
 
+                toolbar = tk.Frame(frame, bg='#222222')
+                toolbar.pack(fill='x', padx=8, pady=8, side='top')
+
                 editor = create_text_editor(parent=frame)
                 self.current_editor = editor
 
-                toolbar = tk.Frame(frame, bg='#222222')
-                toolbar.pack(fill='x', padx=8, pady=8, side='top')
+
 
                 btn_style = {
                     'bg': '#222222',
@@ -178,7 +202,7 @@ def create_project_manager(parent, project_data=None):
                 font_size_var = tk.IntVar(value=12)
                 def on_font_size_change(value):
                     editor.change_font(font_family=font_family_var.get(), font_size=int(value))
-                font_size_menu = tk.OptionMenu(toolbar, font_size_var, *[10, 12, 14, 16, 18, 20, 24], command=on_font_size_change)
+                font_size_menu = tk.OptionMenu(toolbar, font_size_var, *[10, 12, 14, 16, 18, 20, 24, 32 , 38, 42 , 47, 50], command=on_font_size_change)
                 font_size_menu.config(bg='#222222', fg='#cccccc', font=('Segoe UI', 10), relief='flat', bd=0, highlightthickness=0, activebackground='#333333', activeforeground='#ffffff')
                 font_size_menu['menu'].config(bg='#222222', fg='#cccccc', font=('Segoe UI', 10))
                 font_size_menu.pack(side='left', padx=4)
@@ -199,7 +223,7 @@ def create_project_manager(parent, project_data=None):
                             if ret:
                                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                                 img = Image.fromarray(frame)
-                                img.thumbnail((180, 120))
+                                img.thumbnail((360, 240))
                                 img_tk = ImageTk.PhotoImage(img)
                             else:
                                 img_tk = None
@@ -214,7 +238,7 @@ def create_project_manager(parent, project_data=None):
                             thumb_label.image = img_tk  # Keep reference
                             thumb_label.pack(side='left')
                         else:
-                            thumb_label = tk.Label(video_frame, text="No Preview", bg='#222222', fg='#cccccc', width=22, height=7)
+                            thumb_label = tk.Label(video_frame, text="No Preview", bg='#222222', fg='#cccccc', width=66, height=21)
                             thumb_label.pack(side='left')
 
                         # Play button
@@ -229,16 +253,31 @@ def create_project_manager(parent, project_data=None):
                             # Open a simple player window using OpenCV
                             win = tk.Toplevel(editor.text_area)
                             win.title("Video Player")
-                            win.geometry("640x400")
+                            win.geometry("1920x800")
                             label = tk.Label(win)
                             label.pack(fill='both', expand=True)
                             cap = cv2.VideoCapture(file_path)
+
+                            vid_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            vid_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            aspect_ratio = vid_width / vid_height
+
+                            target_width, target_height = 1920, 1800
+                            # Calculate new size keeping aspect ratio
+                            if target_width / target_height > aspect_ratio:
+                                # window is wider → fit by height
+                                new_height = target_height
+                                new_width = int(target_height * aspect_ratio)
+                            else:
+                                # window is taller → fit by width
+                                new_width = target_width
+                                new_height = int(target_width / aspect_ratio)                            
                             def show_frame():
                                 ret, frame = cap.read()
                                 if ret:
                                     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                                     img = Image.fromarray(frame)
-                                    img = img.resize((640, 400))
+                                    img = img.resize((new_width, new_height), Image.LANCZOS , Image.ANTIALIAS)
                                     img_tk = ImageTk.PhotoImage(img)
                                     label.imgtk = img_tk
                                     label.config(image=img_tk)
@@ -289,7 +328,7 @@ def create_project_manager(parent, project_data=None):
                         image = Image.open(io.BytesIO(img_data))
                 
                         # Optionally resize to a thumbnail
-                        image.thumbnail((150, 200))  # Keep aspect ratio
+                        image.thumbnail((300, 400))  # Keep aspect ratio
                         tk_img = ImageTk.PhotoImage(image)
                 
                         # Create a frame and add thumbnail inside Text widget
@@ -300,11 +339,36 @@ def create_project_manager(parent, project_data=None):
                 
                         # Embed frame inside the text widget
                         editor.text_area.window_create(tk.INSERT, window=media_frame)
+                        thumb_label.bind("<Button-1>", lambda e, path=file_path: open_file(path))
                 
                     except Exception as e:
                         print("Error rendering PDF:", e)
                         # Fallback: just insert text
                         editor.text_area.insert(tk.INSERT, "[PDF Preview not available]\n")
+
+                    download_btn = tk.Button(media_frame, text="⬇ Download", bg='#222222', fg='#00bfff', relief='flat', font=('Segoe UI', 10), cursor='hand2')
+                    download_btn.pack(side='left', padx=4)
+                    
+                    def download_media():
+                            save_path = tk.filedialog.asksaveasfilename(defaultextension=".pdf ", filetypes=[("Pdf files", "*.pdf"),("DOC" , "*.docx"), ("All files", "*.*")])
+                            if save_path:
+                                shutil.copy(file_path, save_path)
+                                messagebox.showinfo("Download", f"Document saved to:\n{save_path}")
+
+                    download_btn.config(command=download_media)
+                    
+                    def open_file(file_path):
+                        try:
+                            if os.name == 'nt':
+                                os.startfile(file_path)
+                            elif os.name == 'posix':
+                                subprocess.run(['xdg-open',file_path], check=False) 
+                            elif sys.platform.startswith('darwin'):
+                                subprocess.run(['open',file_path], check=False)
+                            else:
+                                messagebox.showerror("Error","Unsupported OS for opening files.")
+                        except Exception as e:
+                            messagebox.showerror("Error",f"Failed to open file:\n{e}")
 
 
                     
@@ -397,79 +461,7 @@ def create_project_manager(parent, project_data=None):
                 insert_img_btn = tk.Button(toolbar, text="Insert Image", command=editor.upload_image, **btn_style)
                 insert_img_btn.pack(side='left', padx=4)
 
-                def insert_video_embed():
-                    file_path = tk.filedialog.askopenfilename(
-                        filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.webm"), ("All files", "*.*")]
-                    )
-                    if file_path:
-                        try:
-                            cap = cv2.VideoCapture(file_path)
-                            ret, frame = cap.read()
-                            cap.release()
-                            if ret:
-                                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                img = Image.fromarray(frame)
-                                img.thumbnail((180, 120))
-                                img_tk = ImageTk.PhotoImage(img)
-                            else:
-                                img_tk = None
-                        except Exception:
-                            img_tk = None
-
-                        video_frame = tk.Frame(editor.text_area, bg='#222222', bd=0)
-                        if img_tk:
-                            thumb_label = tk.Label(video_frame, image=img_tk, bg='#222222')
-                            thumb_label.image = img_tk
-                            thumb_label.pack(side='left')
-                        else:
-                            thumb_label = tk.Label(video_frame, text="No Preview", bg='#222222', fg='#cccccc', width=22, height=7)
-                            thumb_label.pack(side='left')
-
-                        play_btn = tk.Button(video_frame, text="▶ Play", bg='#00bfff', fg='white', relief='flat', font=('Segoe UI', 10, 'bold'), cursor='hand2')
-                        play_btn.pack(side='left', padx=8)
-                        download_btn = tk.Button(video_frame, text="⬇ Download", bg='#222222', fg='#00bfff', relief='flat', font=('Segoe UI', 10), cursor='hand2')
-                        download_btn.pack(side='left', padx=4)
-
-                        def play_video():
-                            win = tk.Toplevel(editor.text_area)
-                            win.title("Video Player")
-                            win.geometry("640x400")
-                            label = tk.Label(win)
-                            label.pack(fill='both', expand=True)
-                            cap = cv2.VideoCapture(file_path)
-                            def show_frame():
-                                ret, frame = cap.read()
-                                if ret:
-                                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                    img = Image.fromarray(frame)
-                                    img = img.resize((640, 400))
-                                    img_tk = ImageTk.PhotoImage(img)
-                                    label.imgtk = img_tk
-                                    label.config(image=img_tk)
-                                    win.after(30, show_frame)
-                                else:
-                                    cap.release()
-                            show_frame()
-                            win.protocol("WM_DELETE_WINDOW", lambda: (cap.release(), win.destroy()))
-
-                        def download_video():
-                            save_path = tk.filedialog.asksaveasfilename(defaultextension=".mp4", filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.webm"), ("All files", "*.*")])
-                            if save_path:
-                                shutil.copy(file_path, save_path)
-                                messagebox.showinfo("Download", f"Video saved to:\n{save_path}")
-
-                        play_btn.config(command=play_video)
-                        download_btn.config(command=download_video)
-
-                        editor.text_area.window_create(tk.INSERT, window=video_frame)
                 
-
-                insert_video_btn = tk.Button(
-                    toolbar, text="Insert Video",
-                    command=insert_video_embed,
-                    **btn_style
-                )
-                insert_video_btn.pack(side='left', padx=4)
 
 
                 if file_path:
