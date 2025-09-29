@@ -59,7 +59,7 @@ class FlowchartEditor(tk.Frame):
         self.canvas.bind("<B2-Motion>", self.do_pan)
         self.canvas.bind("<ButtonRelease-2>", self.end_pan)
 
-        parent.bind("<Control-t>", self.text_hotkey)
+        parent.bind_all("<Control-t>", self.text_hotkey)
         parent.bind("<Configure>", lambda e: self.draw_grid())
 
         self.after_idle(self.draw_grid)

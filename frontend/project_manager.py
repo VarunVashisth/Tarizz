@@ -11,6 +11,7 @@ import cv2
 from PIL import Image, ImageTk
 import shutil
 import io
+from flowchart import FlowchartEditor
 
 def open_file_with_default_app(filepath):
     if platform.system() == "Windows":
@@ -65,6 +66,8 @@ def create_project_manager(parent, project_data=None):
             
             tk.Button(btn_frame, text="Add Folder", command=self.add_folder, **btn_style).pack(fill='x', pady=2)
             tk.Button(btn_frame, text="Add Subpage", command=self.add_subpage, **btn_style).pack(fill='x', pady=2)
+            tk.Button(btn_frame, text="Add Flowchart", command=self.add_flowchart, **btn_style).pack(fill='x', pady=2)
+            tk.Button(btn_frame, text="Rename", command=self.rename_item, **btn_style).pack(fill='x', pady=2)
             tk.Button(btn_frame, text="Delete", command=self.delete, **btn_style).pack(fill='x', pady=2)
 
             # Editor container
@@ -119,6 +122,21 @@ def create_project_manager(parent, project_data=None):
                 parent_data[name] = None  # subpage is None or file path
                 self.tree.insert(parent_id, "end", text=name)
 
+        def add_flowchart(self):
+            selected = self.tree.selection()
+            if not selected: return
+            parent_id = selected[0]
+            parent_data = self.get_node_data(parent_id)
+            if parent_data is None: return
+            name = simpledialog.askstring("Flowchart Name","Enter Flowchart name:")
+            if name:
+                # Check for duplicate Flowchart name in the same folder
+                if name in parent_data:
+                    messagebox.showerror("Error", f"Flowchart '{name}' already exists in this folder.")
+                    return
+                parent_data[name] = "flowchart"  # Flowchart is None or file path
+                self.tree.insert(parent_id, "end", text=name)
+
         def delete(self):
             selected = self.tree.selection()
             if not selected: return
@@ -130,6 +148,33 @@ def create_project_manager(parent, project_data=None):
                 del parent_data[item_text]
             self.tree.delete(item_id)
 
+        # Inside your ProjectManager class, add this method:
+
+        def rename_item(self):
+            selected = self.tree.selection()
+            if not selected:
+                return
+            item_id = selected[0]
+            old_name = self.tree.item(item_id)['text']
+            parent_id = self.tree.parent(item_id)
+            parent_data = self.get_node_data(parent_id)
+            if parent_data is None:
+                return
+            
+            new_name = simpledialog.askstring("Rename", f"Enter new name for '{old_name}':")
+            if not new_name:
+                return
+            if new_name in parent_data:
+                messagebox.showerror("Error", f"An item named '{new_name}' already exists here.")
+                return
+            
+            # Preserve existing value (subpage None, flowchart None, folder dict)
+            parent_data[new_name] = parent_data.pop(old_name)
+            
+            # Update tree text
+            self.tree.item(item_id, text=new_name)
+
+
         def on_tree_select(self, event):
             selected = self.tree.selection()
             if not selected: return
@@ -137,13 +182,24 @@ def create_project_manager(parent, project_data=None):
             item_text = self.tree.item(item_id)['text']
             parent_id = self.tree.parent(item_id)
             parent_data = self.get_node_data(parent_id)
-            if parent_data is None: return  # root or folder clicked
+            if parent_data is None: return  # folder or root clicked
+        
             node_data = parent_data.get(item_text)
             if isinstance(node_data, dict):
-                # Folder selected, do not open editor
-                return
-            # Subpage selected, open editor
-            self.open_editor(parent_data, item_text)
+                return  # folder
+            elif node_data == "flowchart":
+                self.open_flowchart_editor(item_text)  # pass the name
+            else:
+                self.open_editor(parent_data, item_text)         
+
+                
+        def open_flowchart_editor(self, flowchart_data):
+            if self.current_editor_frame:
+                self.current_editor_frame.destroy()
+            self.current_editor_frame = ttk.Frame(self.editor_container)
+            self.current_editor_frame.pack(fill="both", expand=True)
+            self.current_editor = FlowchartEditor(self.current_editor_frame)
+            self.current_editor.pack(fill="both", expand=True)
 
         def open_editor(self, folder_data, page):
             # Ensure 'Projects' key exists in folder_data
