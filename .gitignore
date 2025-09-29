@@ -322,3 +322,4 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 *.txt
+*.png
