@@ -95,9 +95,11 @@ def bootstrap():
 
     # --- 3. initialize database ---
     from backend.database import init_database
-    db_path = os.path.join(_session.storage.data_dir, "database.db")
+    base_dir = os.path.expanduser("~/.tarizz")
+    os.makedirs(base_dir, exist_ok=True)
+    
+    db_path = os.path.join(base_dir, "database.db")
     init_database(db_path, _session.session_key)
-
     # --- 4. patch the frontend ---
     _apply_patches()
 
@@ -363,5 +365,5 @@ def _on_dashboard_close(dashboard):
             card.db_id = db_id
     
     # Wipe temp directory
-    _session._wipe_tmp()
+
     dashboard.root.destroy()

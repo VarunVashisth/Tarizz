@@ -270,7 +270,7 @@ class Database:
     # CONTENT (Encrypted Text Widget Dumps)
     # ========================================================================
     
-    def save_subpage(self, node_id: int, text_dump: List):
+    def save_subpage(self, node_id: int, text_dump: str):
         """
         Save text widget dump (with tags, formatting, etc) encrypted.
         
@@ -309,7 +309,7 @@ class Database:
         finally:
             conn.close()
     
-    def load_subpage(self, node_id: int) -> Optional[List]:
+    def load_subpage(self, node_id: int) -> Optional[str]:
         """Load and decrypt text widget dump"""
         conn = self._connect()
         try:
@@ -431,11 +431,11 @@ def delete_node(node_id: int):
     """Delete a node"""
     _db_instance.delete_node(node_id)
 
-def save_subpage(node_id: int, text_dump: List):
+def save_subpage(node_id: int, text_dump: str):
     """Save text widget dump encrypted"""
     _db_instance.save_subpage(node_id, text_dump)
 
-def load_subpage(node_id: int) -> Optional[List]:
+def load_subpage(node_id: int) -> Optional[str]:
     """Load text widget dump decrypted"""
     return _db_instance.load_subpage(node_id)
 

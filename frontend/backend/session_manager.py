@@ -406,7 +406,10 @@ class SessionManager:
           • A temp directory is created for decrypted media.
         """
         self.session_key = key
-        db_path = os.path.join(self.storage.data_dir, "index.db")
+        base_dir = os.path.expanduser("~/.tarizz")
+        os.makedirs(base_dir, exist_ok=True)
+     
+        db_path = os.path.join(base_dir, "index.db")
         self.index = ContentIndex(db_path)
         # Temp dir for media the frontend needs to open by path.
         # tempfile.mkdtemp() returns a unique dir; we wipe it on shutdown.
