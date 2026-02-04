@@ -6,13 +6,14 @@ from project_manager import create_project_manager  # <-- Import the function
 class EditableLabel:
     """Custom editable label that switches to entry on click"""
     
-    def __init__(self, parent, text, font, fg='white', bg='#3a3a3a'):
+    def __init__(self, parent, text, font, fg='white', bg='#3a3a3a', on_change_callback=None):
         self.parent = parent
         self.text = text
         self.font = font
         self.fg = fg
         self.bg = bg
         self.is_editing = False
+        self.on_change_callback = on_change_callback  # ← NEW: callback for changes
         
         # Create label
         self.label = tk.Label(
@@ -56,9 +57,12 @@ class EditableLabel:
             return
             
         new_text = self.entry.get().strip()
-        if new_text:
+        if new_text and new_text != self.text:  # ← CHANGED: check if actually changed
             self.text = new_text
             self.label.config(text=new_text)
+            # ← NEW: trigger callback when text actually changes
+            if self.on_change_callback:
+                self.on_change_callback()
         
         self.entry.destroy()
         self.label.pack(fill='both', expand=True)
@@ -93,6 +97,7 @@ class ProjectCard:
         self.current_index = 0
 
         self.project_data = {}  # Unique project data for this card
+        self.db_id = None       # backend attaches this; None = not yet persisted
 
         # Create card frame with rounded appearance
         self.frame = tk.Frame(
@@ -126,21 +131,47 @@ class ProjectCard:
         self.desc_container.pack(fill='both', expand=True)
         self.desc_container.pack_propagate(False)
         
-        # Title (editable)
+        # ← CHANGED: pass callback to save when edited
         self.title_editor = EditableLabel(
             self.title_container, title, 
             font=('Segoe UI', 12, 'bold'), 
-            fg='white', bg='#3a3a3a'
+            fg='white', bg='#3a3a3a',
+            on_change_callback=self._on_card_edited  # ← NEW
         )
         self.title_editor.pack(fill='both', expand=True)
         
-        # Description (editable)
+        # ← CHANGED: pass callback to save when edited
         self.desc_editor = EditableLabel(
             self.desc_container, description,
             font=('Segoe UI', 9),
-            fg='#cccccc', bg='#3a3a3a'
+            fg='#cccccc', bg='#3a3a3a',
+            on_change_callback=self._on_card_edited  # ← NEW
         )
         self.desc_editor.pack(fill='both', expand=True)
+    
+    # ← NEW: auto-save callback
+    def _on_card_edited(self):
+        """Called when title or description changes - triggers immediate save"""
+        try:
+            from backend.database import _db_instance
+            if _db_instance:
+                if self.db_id:
+                    _db_instance.update_project(
+                        self.db_id,
+                        self.get_title(),
+                        self.get_description(),
+                        self.dashboard.get_card_index(self)
+                    )
+                else:
+                    # Create new project in database
+                    self.db_id = _db_instance.create_project(
+                        self.get_title(),
+                        self.get_description(),
+                        self.dashboard.get_card_index(self)
+                    )
+                    self.project_data = {'id': self.db_id}
+        except Exception as e:
+            print(f"Auto-save failed: {e}")
         
     def bind_events(self):
         """Bind drag and hover events"""
@@ -187,7 +218,9 @@ class ProjectCard:
         win = tk.Toplevel(self.dashboard.root)
         win.title(f"Project Manager - {self.get_title()}")
         win.geometry("900x600")
-        create_project_manager(win, self.project_data)
+        
+        # ← NEW: pass the card reference so ProjectManager can save back
+        create_project_manager(win, self.project_data, parent_card=self)
 
     def on_title_click(self, event):
         """Handle title click for editing"""
@@ -330,7 +363,6 @@ class ProjectDashboard:
         self.setup_window()
         self.create_sidebar()
         self.create_canvas()
-        self.create_sample_cards()
         
     def setup_window(self):
         """Configure main window"""
@@ -394,17 +426,6 @@ class ProjectDashboard:
         self.canvas_frame = tk.Frame(self.canvas_container, bg='#1a1a1a')
         self.canvas_frame.pack(fill='both', expand=True)
         
-    def create_sample_cards(self):
-        """Create initial sample cards"""
-        sample_projects = [
-            ("Website Redesign", "Modernize UI/UX with responsive design"),
-            ("Mobile App", "Cross-platform customer engagement app"),
-            ("API Integration", "Connect third-party services")
-        ]
-        
-        for title, desc in sample_projects:
-            self.add_card(title, desc)
-    
     def add_new_project(self):
         """Add a new empty project card"""
         self.add_card("New Project", "Click to edit description")
@@ -499,7 +520,7 @@ class ProjectDashboard:
     
     def run(self):
         """Start the application"""
-        # Center window
+        # Centre window
         self.root.update_idletasks()
         x = (self.root.winfo_screenwidth() // 2) - (1200 // 2)
         y = (self.root.winfo_screenheight() // 2) - (700 // 2)
@@ -516,7 +537,11 @@ class ProjectDashboard:
         if event.widget == self.root:
             self.root.after(100, self.arrange_cards)
 
-# Run the application
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    from backend.tarizz_bootstrap import bootstrap
+    bootstrap()
     app = ProjectDashboard()
     app.run()
