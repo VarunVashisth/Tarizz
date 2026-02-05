@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk
 import math
 from project_manager import create_project_manager  # <-- Import the function
+from backend.content_index import ContentIndex
+from backend.session_manager import SessionManager
 
 class EditableLabel:
     """Custom editable label that switches to entry on click"""
@@ -152,26 +154,27 @@ class ProjectCard:
     # ← NEW: auto-save callback
     def _on_card_edited(self):
         """Called when title or description changes - triggers immediate save"""
-        try:
-            from backend.database import _db_instance
-            if _db_instance:
-                if self.db_id:
-                    _db_instance.update_project(
-                        self.db_id,
-                        self.get_title(),
-                        self.get_description(),
-                        self.dashboard.get_card_index(self)
-                    )
-                else:
-                    # Create new project in database
-                    self.db_id = _db_instance.create_project(
-                        self.get_title(),
-                        self.get_description(),
-                        self.dashboard.get_card_index(self)
-                    )
-                    self.project_data = {'id': self.db_id}
-        except Exception as e:
-            print(f"Auto-save failed: {e}")
+        pass 
+    #    try:
+    #        from backend.database import _db_instance
+    #        if _db_instance:
+    #            if self.db_id:
+    #                _db_instance.update_project(
+    #                    self.db_id,
+    #                    self.get_title(),
+    #                    self.get_description(),
+    #                    self.dashboard.get_card_index(self)
+    #                )
+    #            else:
+    #                # Create new project in database
+    #                self.db_id = _db_instance.create_project(
+    #                    self.get_title(),
+    #                    self.get_description(),
+    #                    self.dashboard.get_card_index(self)
+    #                )
+    #                self.project_data = {'id': self.db_id}
+    #    except Exception as e:
+    #        print(f"Auto-save failed: {e}")
         
     def bind_events(self):
         """Bind drag and hover events"""
@@ -355,7 +358,8 @@ class ProjectCard:
 class ProjectDashboard:
     """Main dashboard class"""
     
-    def __init__(self):
+    def __init__(self,session):
+        self.session = session
         self.root = tk.Tk()
         self.cards = []
         self.selected_card = None
@@ -363,6 +367,16 @@ class ProjectDashboard:
         self.setup_window()
         self.create_sidebar()
         self.create_canvas()
+        self._load_cards_from_session()
+
+    def _load_cards_from_session(self):
+        projects = self.session.load_all_projects()
+        for p in projects:
+            card = ProjectCard(self, p["title"], p["description"])
+            card.db_id = p["db_id"]
+            card.project_data = p["project_data"]
+            self.cards.append(card)
+        self.arrange_cards()
         
     def setup_window(self):
         """Configure main window"""
@@ -438,11 +452,12 @@ class ProjectDashboard:
         
     def delete_selected_project(self):
         """Delete the currently selected card"""
-        if self.selected_card and self.selected_card in self.cards:
+        if self.selected_card:
+            if self.selected_card.db_id:
+                self.session.delete_project(self.selected_card.db_id)
             self.selected_card.destroy()
             self.cards.remove(self.selected_card)
             self.selected_card = None
-            self.update_selection_ui()
             self.arrange_cards()
     
     def get_columns(self):
@@ -529,6 +544,10 @@ class ProjectDashboard:
         # Bind window resize
         self.root.bind('<Configure>', self.on_window_resize)
         
+        self.root.protocol(
+        "WM_DELETE_WINDOW",
+        self._on_close
+        )
         # Start main loop
         self.root.mainloop()
         

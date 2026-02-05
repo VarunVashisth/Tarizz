@@ -5,12 +5,12 @@ from simple_text_editor import create_text_editor
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from backend.database import (
-    create_node, get_nodes, get_all_nodes_for_project,
-    rename_node, delete_node,
-    save_subpage, load_subpage,
-    save_media, get_media_for_node
-)
+#from backend.database import (
+#    create_node, get_nodes, get_all_nodes_for_project,
+#    rename_node, delete_node,
+#    save_subpage, load_subpage,
+#    save_media, get_media_for_node
+#)
 from flowchart import FlowchartEditor
 
 def create_project_manager(parent, project_data=None, parent_card=None):
