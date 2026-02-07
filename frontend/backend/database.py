@@ -28,6 +28,18 @@ except ImportError:
     encrypt = lambda data, key: data
     decrypt = lambda data, key: data
 
+_db_instance = None  # Singleton instance of Database
+
+def get_db():
+    global _db_instance
+    if _db_instance is None:
+        base_dir = os.path.expanduser("~/.tarizz")
+        os.makedirs(base_dir, exist_ok=True)
+        db_path = os.path.join(base_dir, "database.db")
+        _db_instance = Database(db_path)
+        _db_instance._session_key = hashlib.sha256(b'dummy-32-byte-key-for-testing-1234567').digest()  # For testing, use a fixed key
+        _db_instance._init_db()
+    return _db_instance
 
 class Database:
     """Singleton database manager"""
@@ -402,49 +414,51 @@ class Database:
 # PUBLIC API (for project_manager.py to import)
 # ============================================================================
 
-_db_instance = None
 
-def init_database(db_path: str, session_key: bytes):
-    """Initialize the database with session key"""
-    global _db_instance
-    _db_instance = Database(db_path)
-    Database.set_session_key(session_key)
 
 def create_node(project_id: int, parent_id: Optional[int], 
                 node_type: str, name: str) -> int:
     """Create a tree node"""
-    return _db_instance.create_node(project_id, parent_id, node_type, name)
+    return get_db().create_node(project_id, parent_id, node_type, name)
 
 def get_nodes(project_id: int, parent_id: Optional[int] = None) -> List[Dict]:
     """Get child nodes"""
-    return _db_instance.get_nodes(project_id, parent_id)
-
+    return get_db().get_nodes(project_id, parent_id)
 def get_all_nodes_for_project(project_id: int) -> List[Dict]:
     """Get all nodes for a project"""
-    return _db_instance.get_all_nodes_for_project(project_id)
+    return get_db().get_all_nodes_for_project(project_id)
 
 def rename_node(node_id: int, new_name: str):
     """Rename a node"""
-    _db_instance.rename_node(node_id, new_name)
+    return get_db().rename_node(node_id, new_name)
 
 def delete_node(node_id: int):
     """Delete a node"""
-    _db_instance.delete_node(node_id)
-
+    get_db().delete_node(node_id)
 def save_subpage(node_id: int, text_dump: str):
     """Save text widget dump encrypted"""
-    _db_instance.save_subpage(node_id, text_dump)
+    return get_db().save_subpage(node_id, text_dump)
 
 def load_subpage(node_id: int) -> Optional[str]:
     """Load text widget dump decrypted"""
-    return _db_instance.load_subpage(node_id)
-
+    return get_db().load_subpage(node_id)
 def save_media(node_id: int, media_type: str, file_path: str,
                original_filename: str, position_index: str) -> int:
     """Save media reference"""
-    return _db_instance.save_media(node_id, media_type, file_path, 
+    return get_db().save_media(node_id, media_type, file_path, 
                                    original_filename, position_index)
 
 def get_media_for_node(node_id: int) -> List[Dict]:
     """Get all media for a node"""
-    return _db_instance.get_media_for_node(node_id)
+    return get_db().get_media_for_node(node_id)
+
+def get_all_projects() -> List[Dict]:
+    """Get all project cards"""
+    return get_db().get_all_projects()
+def create_project(title: str, description: str, card_order: int) -> int:
+    """Create a new project card"""
+    return get_db().create_project(title, description, card_order)
+
+def update_project(project_id: int, title: str, description: str, card_order: int):
+    """Update a project card"""
+    return get_db().update_project(project_id, title, description, card_order) 

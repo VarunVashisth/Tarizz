@@ -32,10 +32,11 @@ import shutil
 import time
 from typing import List, Dict, Any, Optional
 
-from . import crypto_engine as crypto
-from .auth_manager     import AuthManager
-from .storage_manager  import StorageManager
-from .content_index    import ContentIndex
+import crypto_engine as crypto
+from auth_manager     import AuthManager
+from storage_manager  import StorageManager
+from backend.backup_folder.content_index    import ContentIndex
+
 
 
 class SessionManager:

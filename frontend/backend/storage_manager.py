@@ -44,7 +44,7 @@ import os
 import sys
 import platform
 
-from . import crypto_engine as crypto
+import crypto_engine as crypto
 
 
 # ---------------------------------------------------------------------------

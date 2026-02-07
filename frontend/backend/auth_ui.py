@@ -27,7 +27,7 @@ Design decisions
 import tkinter as tk
 from tkinter import messagebox
 
-from .session_manager import SessionManager
+from .backup_folder.session_manager import SessionManager
 
 
 def run_auth_gate(session: SessionManager) -> bool:

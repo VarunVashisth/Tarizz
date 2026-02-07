@@ -59,7 +59,7 @@ import time
 import hashlib
 import json
 
-from . import crypto_engine as crypto
+import crypto_engine as crypto
 
 # ---------------------------------------------------------------------------
 # Policy constants

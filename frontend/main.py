@@ -2,8 +2,6 @@ import tkinter as tk
 from tkinter import ttk
 import math
 from project_manager import create_project_manager  # <-- Import the function
-from backend.content_index import ContentIndex
-from backend.session_manager import SessionManager
 
 class EditableLabel:
     """Custom editable label that switches to entry on click"""
@@ -154,27 +152,26 @@ class ProjectCard:
     # ← NEW: auto-save callback
     def _on_card_edited(self):
         """Called when title or description changes - triggers immediate save"""
-        pass 
-    #    try:
-    #        from backend.database import _db_instance
-    #        if _db_instance:
-    #            if self.db_id:
-    #                _db_instance.update_project(
-    #                    self.db_id,
-    #                    self.get_title(),
-    #                    self.get_description(),
-    #                    self.dashboard.get_card_index(self)
-    #                )
-    #            else:
-    #                # Create new project in database
-    #                self.db_id = _db_instance.create_project(
-    #                    self.get_title(),
-    #                    self.get_description(),
-    #                    self.dashboard.get_card_index(self)
-    #                )
-    #                self.project_data = {'id': self.db_id}
-    #    except Exception as e:
-    #        print(f"Auto-save failed: {e}")
+        try:
+            from backend.database import _db_instance
+            if _db_instance:
+                if self.db_id:
+                    _db_instance.update_project(
+                        self.db_id,
+                        self.get_title(),
+                        self.get_description(),
+                        self.dashboard.get_card_index(self)
+                    )
+                else:
+                    # Create new project in database
+                    self.db_id = _db_instance.create_project(
+                        self.get_title(),
+                        self.get_description(),
+                        self.dashboard.get_card_index(self)
+                    )
+                    self.project_data = {'id': self.db_id}
+        except Exception as e:
+            print(f"Auto-save failed: {e}")
         
     def bind_events(self):
         """Bind drag and hover events"""
@@ -358,24 +355,44 @@ class ProjectCard:
 class ProjectDashboard:
     """Main dashboard class"""
     
-    def __init__(self,session):
-        self.session = session
+    def __init__(self):
         self.root = tk.Tk()
-        self.cards = []
         self.selected_card = None
         
         self.setup_window()
         self.create_sidebar()
         self.create_canvas()
-        self._load_cards_from_session()
 
-    def _load_cards_from_session(self):
-        projects = self.session.load_all_projects()
-        for p in projects:
-            card = ProjectCard(self, p["title"], p["description"])
-            card.db_id = p["db_id"]
-            card.project_data = p["project_data"]
+        from backend.database import get_all_projects , create_project
+        self.cards = []
+        projects = get_all_projects()
+
+        if projects:
+            for proj in sorted(projects , key=lambda p: p['card_order']):
+                card = ProjectCard(
+                    dashboard = self,
+                    title=proj['title'], 
+                    description=proj['description'] if proj['description'] else ""
+                    )
+                card.db_id = proj['id']
+                card.project_data = {'id': proj['id']}
+                self.cards.append(card)
+        else:
+            new_id = create_project(
+                title = "Sampple Project",
+                description = "Welcome to Tarriz",
+                card_order = 0
+            )
+
+            card = ProjectCard(
+                dashboard = self,
+                title="Sample Project",
+                description="Welcome to Tarizz"
+            )
+            card.db_id = new_id
+            card.project_data = {'id': new_id}
             self.cards.append(card)
+
         self.arrange_cards()
         
     def setup_window(self):
@@ -445,21 +462,63 @@ class ProjectDashboard:
         self.add_card("New Project", "Click to edit description")
         
     def add_card(self, title="New Project", description="Click to edit"):
-        """Add a card to the dashboard"""
-        card = ProjectCard(self, title, description)
-        self.cards.append(card)
-        self.arrange_cards()
+        
+            # 1. Decide position = last position + 1
+            position = len(self.cards)   # new card goes at the end
+        
+            # 2. Create in DATABASE first → get real id
+            from backend.database import create_project   # make sure this import exists at top
+        
+            project_id = create_project(
+                title=title,
+                description=description,
+                card_order=position
+            )
+        
+            # 3. Now create the visible card with real database id
+            card = ProjectCard(self, title=title, description=description)
+            card.db_id = project_id
+            card.project_data = {'id': project_id}          # crucial for ProjectManager
+        
+            self.cards.append(card)
+
+             # 4. Immediately open the manager (now it has valid id)
+            create_project_manager(self, project_data={'id': project_id}, parent_card=card)
+            self.arrange_cards()
+
         
     def delete_selected_project(self):
         """Delete the currently selected card"""
-        if self.selected_card:
-            if self.selected_card.db_id:
-                self.session.delete_project(self.selected_card.db_id)
+        if self.selected_card and self.selected_card in self.cards:
             self.selected_card.destroy()
             self.cards.remove(self.selected_card)
             self.selected_card = None
+            self.update_selection_ui()
             self.arrange_cards()
-    
+
+    def save_cards_to_db(self):
+        from backend.database import create_project, update_project
+        for index , card in enumerate(self.cards):
+            title = card.get_title()
+            desc = card.get_description()
+
+            if hasattr(card, 'db_id') and card.db_id is not None:
+                # Update existing project
+                update_project(
+                    project_id = card.db_id,
+                    title = title,
+                    description = desc,
+                    card_order = index
+                )
+            else:
+                new_id = create_project(
+                    title = title,
+                    description = desc,
+                    card_order = index
+                )
+                card.db_id = new_id
+                card.project_data = {'id': new_id}
+
     def get_columns(self):
         """Calculate number of columns based on canvas width"""
         canvas_width = self.canvas_frame.winfo_width()
@@ -532,6 +591,11 @@ class ProjectDashboard:
         else:
             self.delete_btn.configure(state='disabled')
             self.info_label.configure(text="Click a card to select")
+
+    def on_close(self):
+        """Handle application close - save state"""
+        self.save_cards_to_db()
+        self.root.destroy()
     
     def run(self):
         """Start the application"""
@@ -543,11 +607,9 @@ class ProjectDashboard:
         
         # Bind window resize
         self.root.bind('<Configure>', self.on_window_resize)
+
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
-        self.root.protocol(
-        "WM_DELETE_WINDOW",
-        self._on_close
-        )
         # Start main loop
         self.root.mainloop()
         
@@ -560,7 +622,7 @@ class ProjectDashboard:
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    from backend.tarizz_bootstrap import bootstrap
-    bootstrap()
+    #from backend.tarizz_bootstrap import bootstrap
+    #bootstrap()
     app = ProjectDashboard()
     app.run()

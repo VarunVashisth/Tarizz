@@ -53,7 +53,7 @@ import hashlib  # ← NEW: for blob_id derivation
 # ---------------------------------------------------------------------------
 # Backend imports  (the only place these are imported)
 # ---------------------------------------------------------------------------
-from backend.session_manager import SessionManager
+from backend.backup_folder.session_manager import SessionManager
 from backend.auth_ui         import run_auth_gate
 
 
@@ -140,7 +140,9 @@ def _apply_patches():
         _orig_add_card(self, title, description)
         # The card that was just appended is the last one in self.cards
         new_card = self.cards[-1]
-        new_card.db_id = None       # marks it as "not yet saved"
+        new_card.db_id = None 
+        new_card.project_data = {}      
+        new_card.session = _session  # Attach session for later use in ProjectManager
 
     frontend_main.ProjectDashboard.add_card = _patched_add_card
 
@@ -326,6 +328,7 @@ def _load_persisted_cards(dashboard):
         )
         card.db_id = proj["id"]
         card.project_data = {'id': proj["id"]}  # Pass DB ID to project manager
+        card.session = _session  # Attach session for later use in ProjectManager
         dashboard.cards.append(card)
 
     dashboard.arrange_cards()
