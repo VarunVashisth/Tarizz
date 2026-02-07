@@ -462,3 +462,7 @@ def create_project(title: str, description: str, card_order: int) -> int:
 def update_project(project_id: int, title: str, description: str, card_order: int):
     """Update a project card"""
     return get_db().update_project(project_id, title, description, card_order) 
+
+def delete_project(project_id: int):
+    """Delete a project card and all its nodes"""
+    return get_db().delete_project(project_id)

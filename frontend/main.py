@@ -180,7 +180,7 @@ class ProjectCard:
         self.frame.bind('<B1-Motion>', self.on_drag)
         self.frame.bind('<ButtonRelease-1>', self.on_release)
         # Open project manager on double-click
-        self.frame.bind('<Double-Button-1>', self.on_double_click)
+        self.frame.bind('<Double-Button-1>', lambda event: self.dashboard.open_project_manager(self))
         
         # Bind hover events to all widgets including containers
         widgets = [self.frame, self.title_container, self.desc_container, 
@@ -193,9 +193,8 @@ class ProjectCard:
         self.title_editor.label.bind('<Button-1>', self.on_title_click)
         self.desc_editor.label.bind('<Button-1>', self.on_desc_click)
 
-    def on_double_click(self, event):
-        """Open the project manager UI for this card in a new window"""
-        self.open_project_manager()
+ #   def on_double_click(self, event):
+ #       self.open_project_manager()
 
     def on_click(self, event):
         """Handle card selection and start dragging"""
@@ -213,15 +212,6 @@ class ProjectCard:
         # Store original position
         self.original_index = self.dashboard.get_card_index(self)
         
-    def open_project_manager(self):
-        """Open the project manager UI for this card in a new window"""
-        win = tk.Toplevel(self.dashboard.root)
-        win.title(f"Project Manager - {self.get_title()}")
-        win.geometry("900x600")
-        
-        # ← NEW: pass the card reference so ProjectManager can save back
-        create_project_manager(win, self.project_data, parent_card=self)
-
     def on_title_click(self, event):
         """Handle title click for editing"""
         # Select card first
@@ -482,14 +472,37 @@ class ProjectDashboard:
         
             self.cards.append(card)
 
-             # 4. Immediately open the manager (now it has valid id)
-            create_project_manager(self, project_data={'id': project_id}, parent_card=card)
             self.arrange_cards()
+            self.select_card
 
+    def open_project_manager(self, card):
+
+        if hasattr(card , '_manager_window') and card._manager_window and card._manager_window.winfo_exists():
+            card._manager_window.lift()
+            card._manager_window.focus_force()
+            return
+        window = create_project_manager(None, project_data=card.project_data, parent_card=card)
+        card._manager_window = window  # attach reference to card for later use
+
+        def on_close():
+            card._manager_window = None  # clear reference on close
+            window.destroy()
+        window.protocol("WM_DELETE_WINDOW", on_close)
         
     def delete_selected_project(self):
-        """Delete the currently selected card"""
-        if self.selected_card and self.selected_card in self.cards:
+            """Delete the currently selected card"""
+            if not self.selected_card or self.selected_card not in self.cards:
+                    return
+        
+            from backend.database import delete_project, get_db   # add imports if missing
+        
+            project_id = getattr(self.selected_card, 'db_id', None)
+        
+            if project_id is not None:
+                db = get_db()
+                delete_project(project_id)   # deletes project + cascades to nodes/content/media
+        
+            # Remove from UI
             self.selected_card.destroy()
             self.cards.remove(self.selected_card)
             self.selected_card = None

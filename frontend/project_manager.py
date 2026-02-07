@@ -369,7 +369,26 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             save_subpage(self.current_node_id, content)
 
     # Create UI
-    frame = ttk.Frame(parent)
-    frame.pack(fill='both', expand=True)
-    ProjectManager(frame, project_data, parent_card)
-    return frame
+    # Create UI in a separate window
+    window = tk.Toplevel()
+    window.title(project_data.get('title', 'Project') if project_data else "Project")
+    window.geometry("1000x700")
+    window.minsize(800, 500)
+
+    # Center window
+    window.update_idletasks()
+    x = (window.winfo_screenwidth() // 2) - (1000 // 2)
+    y = (window.winfo_screenheight() // 2) - (700 // 2)
+    window.geometry(f"1000x700+{x}+{y}")
+
+    # Main container inside new window
+    main_frame = ttk.Frame(window)
+    main_frame.pack(fill='both', expand=True)
+
+    # Pass main_frame to ProjectManager class (not the window directly)
+    ProjectManager(main_frame, project_data, parent_card)
+
+    # Clean close
+    window.protocol("WM_DELETE_WINDOW", window.destroy)
+
+    return window
