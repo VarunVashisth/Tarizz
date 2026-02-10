@@ -3,7 +3,10 @@ from tkinter import simpledialog, filedialog
 import tkinter.font as tkFont
 from PIL import Image, ImageDraw, ImageFont
 
+
 class FlowchartEditor(tk.Frame):
+    global GRID_SIZE
+    GRID_SIZE = 20
     def __init__(self, parent):
         super().__init__(parent, bg='#222222')
         self.current_tool = 'pointer'
@@ -25,7 +28,8 @@ class FlowchartEditor(tk.Frame):
             'activebackground': '#333333', 'activeforeground': '#ffffff',
             'relief': 'flat', 'bd': 0,
             'font': ('Segoe UI', 10), 'highlightthickness': 0,
-            'padx': 6, 'pady': 4, 'cursor': 'hand2'
+            'padx': 6, 'pady': 4, 'cursor': 'hand2',
+            'borderwidth': 1, 'highlightbackground': '#cccccc', 'highlightcolor': '#ccccccc',
         }
 
         for text, tool in [('Pointer','pointer'),('Rectangle','rectangle'),('Oval','oval'),
@@ -63,6 +67,10 @@ class FlowchartEditor(tk.Frame):
         parent.bind("<Configure>", lambda e: self.draw_grid())
 
         self.after_idle(self.draw_grid)
+
+    def set_color(self , color):
+        self.current_color = color
+
 
     def draw_grid(self):
         self.canvas.delete('gridline')
@@ -144,7 +152,7 @@ class FlowchartEditor(tk.Frame):
             x, y = self.start_x, self.start_y
             if self.current_tool == 'rectangle':
                 item = self.canvas.create_rectangle(x-50,y-25,x+50,y+25,
-                                                    fill='#333333', outline='#cccccc', width=2, tags='shape')
+                                                    fill='#333333', outline='#cccccc', width=3, stipple='', joinstyle='round', tags='shape')
             elif self.current_tool == 'oval':
                 item = self.canvas.create_oval(x-50,y-25,x+50,y+25,
                                                fill='#333333', outline='#cccccc', width=2, tags='shape')
@@ -205,9 +213,16 @@ class FlowchartEditor(tk.Frame):
             self.canvas.coords(self.current_item,self.start_x,self.start_y,x,y)
             self.update_scrollregion()
 
+    def snap(value):
+        return round(value/GRID_SIZE)*GRID_SIZE
+    
     def on_release(self, event):
         self.current_item=None
         self.move_start=None
+
+        coords = self.canvas.coords(self.current_item)
+        new_coords = [self.snap(c) for c in coords]
+        self.canvas.coords(self.current_item, *new_coords)
 
     def start_pan(self, event):
         self.pan_start = (event.x, event.y)
@@ -228,6 +243,9 @@ class FlowchartEditor(tk.Frame):
             base_size = self.text_fonts.get(shape, 12)
             self.canvas.itemconfig(tid, font=('Segoe UI', int(base_size*self.zoom_factor)))
         self.update_scrollregion()
+
+
+
 
     def export_png(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[("PNG files","*.png")])

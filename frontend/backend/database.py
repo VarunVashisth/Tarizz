@@ -282,27 +282,21 @@ class Database:
     # CONTENT (Encrypted Text Widget Dumps)
     # ========================================================================
     
-    def save_subpage(self, node_id: int, text_dump: str):
+    def save_subpage(self, node_id: int, data_dump: Dict):
         """
-        Save text widget dump (with tags, formatting, etc) encrypted.
-        
-        text_dump is the output of text_widget.dump('1.0', 'end')
-        Format: [('text', '1.0', 'Hello'), ('tagon', '1.2', 'bold'), ...]
+        Save dict with 'content' (str) and 'tags' (dict of lists)
         """
         import time
         
-        # Serialize dump to JSON
-        json_str = json.dumps(text_dump)
+        json_str = json.dumps(data_dump)
         
-        # Encrypt it
         if self._session_key:
             encrypted = encrypt(json_str.encode('utf-8'), self._session_key)
         else:
-            encrypted = json_str.encode('utf-8')  # Fallback
+            encrypted = json_str.encode('utf-8')
         
         conn = self._connect()
         try:
-            # Check if content exists
             exists = conn.execute(
                 "SELECT id FROM content WHERE node_id=?;", (node_id,)
             ).fetchone()
@@ -321,8 +315,8 @@ class Database:
         finally:
             conn.close()
     
-    def load_subpage(self, node_id: int) -> Optional[str]:
-        """Load and decrypt text widget dump"""
+    def load_subpage(self, node_id: int) -> Optional[Dict]:
+        """Load and decrypt dict dump"""
         conn = self._connect()
         try:
             row = conn.execute(
@@ -332,13 +326,11 @@ class Database:
             if not row:
                 return None
             
-            # Decrypt
             if self._session_key:
                 decrypted = decrypt(row['encrypted_dump'], self._session_key)
             else:
                 decrypted = row['encrypted_dump']
             
-            # Deserialize
             json_str = decrypted.decode('utf-8')
             return json.loads(json_str)
         finally:
@@ -375,6 +367,17 @@ class Database:
             return cursor.lastrowid
         finally:
             conn.close()
+
+    def update_media(self, media_id: int , position: str ):
+        conn = self._connect()
+        try:
+            conn.execute(
+                "UPDATE media SET position_index=? WHERE id=?;",
+                (position, media_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()        
     
     def get_media_for_node(self, node_id: int) -> List[Dict]:
         """Get all media for a node with decrypted paths"""
@@ -435,12 +438,13 @@ def rename_node(node_id: int, new_name: str):
 def delete_node(node_id: int):
     """Delete a node"""
     get_db().delete_node(node_id)
-def save_subpage(node_id: int, text_dump: str):
-    """Save text widget dump encrypted"""
-    return get_db().save_subpage(node_id, text_dump)
 
-def load_subpage(node_id: int) -> Optional[str]:
-    """Load text widget dump decrypted"""
+def save_subpage(node_id: int, data_dump: Dict):
+    """Save dict dump encrypted"""
+    return get_db().save_subpage(node_id, data_dump)
+
+def load_subpage(node_id: int) -> Optional[Dict]:
+    """Load dict dump decrypted"""
     return get_db().load_subpage(node_id)
 def save_media(node_id: int, media_type: str, file_path: str,
                original_filename: str, position_index: str) -> int:
@@ -466,3 +470,6 @@ def update_project(project_id: int, title: str, description: str, card_order: in
 def delete_project(project_id: int):
     """Delete a project card and all its nodes"""
     return get_db().delete_project(project_id)
+
+def update_media_position(media_id: int, position: str):
+    get_db().update_media(media_id, position)

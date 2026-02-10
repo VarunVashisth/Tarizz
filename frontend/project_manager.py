@@ -1,6 +1,6 @@
 # project_manager.py
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox
+from tkinter import ttk, simpledialog, messagebox , filedialog
 from simple_text_editor import create_text_editor
 import sys
 import os
@@ -12,6 +12,7 @@ from backend.database import (
     save_media, get_media_for_node
 )
 from flowchart import FlowchartEditor
+from PIL import Image, ImageTk
 
 def create_project_manager(parent, project_data=None, parent_card=None):
     """
@@ -312,20 +313,212 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             frame = tk.Frame(self.editor_container, bg='#222222')
             frame.pack(fill='both', expand=True)
             self.current_editor_frame = frame
-
+        
             editor = create_text_editor(parent=frame)
             self.current_editor = editor
             self.current_node_id = node_id
+        
+            text = editor.text_area
+            text.tag_configure('bold', font=(text.cget('font').split()[0], -12, 'bold'))
+            text.tag_configure('italic', font=(text.cget('font').split()[0], -12, 'italic'))
+            text.tag_configure('underline', underline=True)
+            text.tag_configure('highlight', background='#ffff00', foreground='#000000')
+            text.tag_configure('code', font='Courier -12', background='#003300', foreground='#00ff00',
+                               lmargin1=10, lmargin2=10, rmargin=10)
+        
+            def toggle_tag(event=None, tag=None):
+                try:
+                    sel_start = text.index(tk.SEL_FIRST)
+                    sel_end = text.index(tk.SEL_LAST)
+                    if sel_start and sel_end:
+                        current_tags = text.tag_names(sel_start)
+                        if tag in current_tags:
+                            text.tag_remove(tag, sel_start, sel_end)
+                        else:
+                            text.tag_add(tag, sel_start, sel_end)
+                    return 'break'
+                except tk.TclError:
+                    return 'break'
+        
+            text.bind('<Control-b>', lambda e: toggle_tag(e, 'bold'))
+            text.bind('<Control-i>', lambda e: toggle_tag(e, 'italic'))
+            text.bind('<Control-u>', lambda e: toggle_tag(e, 'underline'))
+            text.bind('<Control-Shift-h>', lambda e: toggle_tag(e, 'highlight'))
+            text.bind('<Control-Shift-c>', lambda e: toggle_tag(e, 'code'))
+        
+            # Toolbar code here (your existing toolbar)
+        
+            # Load content
+            dump = load_subpage(node_id)
+            if dump:
+                text.delete("1.0", "end")
+                
+                # Handle both old string format and new dict format
+                if isinstance(dump, str):
+                    content = dump
+                    tags_data = {}
+                    print("[DEBUG] Loaded legacy string content")
+                else:
+                    content = dump.get('content', '')
+                    tags_data = dump.get('tags', {})
+                    print(f"[DEBUG] Loaded dict - content len: {len(content)}")
+                
+                text.insert("1.0", content)
+    
+                # Apply tags if present
+                for tag_name, ranges_list in tags_data.items():
+                    for start, end in ranges_list:
+                        try:
+                            text.tag_add(tag_name, start, end)
+                        except tk.TclError:
+                            pass  # ignore invalid indices
+                        # Load media
+            media_list = get_media_for_node(node_id)
+            
+            def parse_index(idx):
+                if not idx:
+                    return (0, 0)
+                try:
+                    line, char = map(int, idx.split('.'))
+                    return line, char
+                except:
+                    return (0, 0)
+            
+            sorted_media = sorted(media_list, key=lambda m: parse_index(m['position_index']), reverse=True)
+            
+            for media in sorted_media:
+                pos = media['position_index'] or "end"
+                file_path = media['file_path']
+                original_filename = media['original_filename']
+                media_type = media['media_type']
+                media_id = media['id']
+                
+                if media_type == 'image':
+                    from PIL import Image, ImageTk
+                    try:
+                        img = Image.open(file_path)
+                        img.thumbnail((200, 200))
+                        photo = ImageTk.PhotoImage(img)
+                        label = tk.Label(text, image=photo, bg='#333333', cursor='sb_h_double_arrow')
+                        label.image = photo
+                        label.bind('<Button-1>', lambda e, l=label, i=img: start_resize(e, l, i))
+                        label.bind('<B1-Motion>', lambda e, l=label, i=img: do_resize(e, l, i))
+                    except:
+                        label = tk.Label(text, text="[Broken Image]", bg='red', fg='white')
+                    label.media_id = media_id
+                
+                elif media_type == 'video':
+                    thumb_frame = tk.Frame(text, bg='#333333', width=200, height=150)
+                    # Placeholder thumbnail (no real extract without extra libs)
+                    tk.Label(thumb_frame, text='▶ Video: ' + original_filename[:20], bg='#333333', fg='#cccccc', wraplength=180).pack(pady=10)
+                    thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+                    menu = tk.Menu(thumb_frame, tearoff=0)
+                    menu.add_command(label='Download', command=lambda fp=file_path: download_file(fp))
+                    thumb_frame.bind('<Button-3>', lambda e: menu.post(e.x_root, e.y_root))
+                    label = thumb_frame
+                    label.media_id = media_id
+                
+                elif media_type in ['pdf', 'doc']:
+                    doc_frame = tk.Frame(text, bg='#2a2a3a', width=220, height=100)
+                    # Placeholder thumbnail
+                    tk.Label(doc_frame, text='📄 Doc: ' + original_filename[:20], bg='#2a2a3a', fg='#aaffaa', wraplength=200).pack(pady=4)
+                    tk.Button(doc_frame, text="↓ Save", command=lambda fp=file_path: download_file(fp), bg='#3a5a3a', fg='white', relief='flat', padx=8).pack(side='bottom', pady=4)
+                    label = doc_frame
+                    label.media_id = media_id
+                
+                try:
+                    text.window_create(pos, window=label)
+                    text.insert(f"{pos}+1c", '\n')
+                except tk.TclError as e:
+                    print(f"Insert failed at {pos}: {e}")  # debug
 
-            # Load content from database
-            content = load_subpage(node_id)
-            if content:
-                editor.text_area.delete("1.0", "end")
-                editor.text_area.insert("1.0", content or "")
 
+
+                    # ───────────────────────────────────────────────
+        #   Image resize helpers
+        # ───────────────────────────────────────────────
+            def start_resize(event, label, original_image):
+                """Begin resizing image when mouse pressed on it"""
+                label._resize_start_x = event.x
+                label._resize_start_width = label.winfo_width()
+                label._resize_start_height = label.winfo_height()
+                label._original_image = original_image  # keep reference
+    
+            def do_resize(event, label, original_image):
+                """Resize image while dragging mouse (preserve aspect ratio)"""
+                if not hasattr(label, '_resize_start_x'):
+                    return
+    
+                dx = event.x - label._resize_start_x
+                new_width = max(60, label._resize_start_width + dx)  # min 60px
+    
+                # Preserve aspect ratio
+                aspect = label._resize_start_height / label._resize_start_width
+                new_height = int(new_width * aspect)
+    
+                try:
+                    from PIL import Image, ImageTk
+                    resized_img = original_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    new_photo = ImageTk.PhotoImage(resized_img)
+                    label.configure(image=new_photo)
+                    label.image = new_photo  # keep reference alive
+                    label.configure(width=new_width, height=new_height)
+                except Exception as e:
+                    print(f"Resize failed: {e}")
+    
+            # ───────────────────────────────────────────────
+            #   Media action helpers
+            # ───────────────────────────────────────────────
+            def play_video(file_path):
+                """Open video file with default system player"""
+                import subprocess
+                import sys
+                import os
+    
+                if not os.path.exists(file_path):
+                    print(f"Video file not found: {file_path}")
+                    return
+    
+                try:
+                    if sys.platform == "darwin":       # macOS
+                        subprocess.call(['open', file_path])
+                    elif sys.platform == "win32":      # Windows
+                        os.startfile(file_path)
+                    else:                              # Linux
+                        subprocess.call(['xdg-open', file_path])
+                except Exception as e:
+                    print(f"Could not open video: {e}")
+                    # Optional: show messagebox
+                    # messagebox.showerror("Error", f"Cannot play video:\n{e}")
+    
+            def download_file(file_path):
+                """Let user choose where to save a copy of the media file"""
+                from tkinter import filedialog
+                import os
+                import shutil
+    
+                if not os.path.exists(file_path):
+                    print(f"File not found for download: {file_path}")
+                    return
+    
+                default_name = os.path.basename(file_path)
+                dest_path = filedialog.asksaveasfilename(
+                    defaultextension=os.path.splitext(default_name)[1],
+                    initialfile=default_name,
+                    title="Save As..."
+                )
+    
+                if dest_path:
+                    try:
+                        shutil.copy2(file_path, dest_path)
+                        print(f"File saved to: {dest_path}")
+                    except Exception as e:
+                        print(f"Download failed: {e}")
+        
             # Bind auto-save
-            editor.text_area.bind('<KeyRelease>', lambda e: self.schedule_save())
-            editor.text_area.bind('<FocusOut>', lambda e: self.save_current_page())
+            text.bind('<KeyRelease>', lambda e: self.schedule_save())
+            text.bind('<FocusOut>', lambda e: self.save_current_page())
+
 
  #       def restore_text_content(self, text_widget, content):
  #           """Restore text widget from content"""
@@ -358,16 +551,28 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             if not self.current_editor or not self.current_node_id:
                 return
             
-            # Get text widget content
-#            content = self.current_editor.text_area.content('1.0', 'end', 
-#                                                      text=True, tag=True, mark=True, window=True)
-#            
-#            # Save to database (encrypted automatically)
-#            save_subpage(self.current_node_id, content)
-
-            content = self.current_editor.text_area.get("1.0", "end-1c")
-            save_subpage(self.current_node_id, content)
-
+            text = self.current_editor.text_area
+            content = text.get("1.0", "end-1c")
+            
+            tags = {}
+            for tag_name in ['bold', 'italic', 'underline', 'highlight', 'code']:
+                ranges = text.tag_ranges(tag_name)
+                if ranges:
+                    tags[tag_name] = [[str(ranges[i]), str(ranges[i+1])] for i in range(0, len(ranges), 2)]
+            
+            dump_data = {'content': content, 'tags': tags}
+            save_subpage(self.current_node_id, dump_data)
+            
+            # Update media positions
+            for window_name in text.window_names():
+                try:
+                    widget = text.nametowidget(window_name)
+                    if hasattr(widget, 'media_id'):
+                        pos = text.index(window_name)
+                        from backend.database import update_media_position
+                        update_media_position(widget.media_id, pos)
+                except Exception as e:
+                    print(f"Failed to update media position for widget {widget}: {e}")
     # Create UI
     # Create UI in a separate window
     window = tk.Toplevel()
