@@ -15,8 +15,9 @@ from backend.database import (
     save_media, get_media_for_node
 )
 from flowchart import FlowchartEditor
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk ,ImageDraw
 import fitz
+
 
 def create_project_manager(parent, project_data=None, parent_card=None):
     """
@@ -611,9 +612,10 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         label = tk.Label(text, text="[Broken Image]", bg='red', fg='white')
 
                 elif media_type == 'video':
-                    thumb_frame = tk.Frame(text, bg='#111', width=360, height=200, bd=0, relief='flat')
+                    thumb_frame = tk.Frame(text, bg='#0d1117', width=360, height=200, bd=0, relief='flat')
 
-                    # Background thumbnail (placeholder or real)
+                    # Background thumbnail (real or placeholder)
+                    bg_photo = None
                     try:
                         cap = cv2.VideoCapture(file_path)
                         if cap.isOpened():
@@ -622,80 +624,128 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                                 img = Image.fromarray(frame)
                                 img.thumbnail((360, 200))
-                                photo = ImageTk.PhotoImage(img)
-                                bg_label = tk.Label(thumb_frame, image=photo, bg='#111')
-                                bg_label.image = photo
-                                bg_label.place(relx=0.5, rely=0.5, anchor='center')
+                                bg_photo = ImageTk.PhotoImage(img)
                     except:
-                        bg_label = tk.Label(thumb_frame, text="Video", bg='#222', fg='#888')
-                        bg_label.place(relx=0.5, rely=0.5, anchor='center')
+                        pass
 
-                    # Big centered play icon (semi-transparent)
-                    play_icon = tk.Label(thumb_frame, text="▶", font=('Segoe UI', 60, 'bold'),
-                                         fg='#ffffff', bg=thumb_frame.cget('bg'))  # transparent bg
-                    play_icon.place(relx=0.5, rely=0.5, anchor='center')
+                    bg_label = tk.Label(thumb_frame, image=bg_photo, bg='#0d1117')
+                    if bg_photo:
+                        bg_label.image = bg_photo
+                    bg_label.place(relx=0.5, rely=0.5, anchor='center')
 
-                    # Hover effect: slight scale + opacity
-                    def on_enter(e):
-                        play_icon.config(fg='#00ff99', font=('Segoe UI', 74, 'bold'))
-                    def on_leave(e):
-                        play_icon.config(fg='#ffffff', font=('Segoe UI', 68, 'bold'))
+                    # Centered semi-transparent play icon overlay
+                    # Transparent PNG play button overlay
+                    try:
+                        play_img_path = "data/play-button.png"  # your PNG path
+                        play_img = Image.open(play_img_path).convert("RGBA")
+                        play_img.thumbnail((30, 30))  # small size
 
-                    thumb_frame.bind('<Enter>', on_enter)
-                    thumb_frame.bind('<Leave>', on_leave)
-                    play_icon.bind('<Enter>', on_enter)
-                    play_icon.bind('<Leave>', on_leave)
+                        # Create circular mask
+                        size = play_img.size
+                        mask = Image.new("L", size, 0)
+                        draw = ImageDraw.Draw(mask)
+                        draw.ellipse((0, 0) + size, fill=255)  # perfect circle
 
-                    # Click to play
+                        # Apply mask → corners transparent
+                        circular_play = Image.new("RGBA", size, (0, 0, 0, 0))
+                        circular_play.paste(play_img, (0, 0), mask)
+
+                        play_photo = ImageTk.PhotoImage(circular_play)
+
+                        play_overlay = tk.Label(
+                            thumb_frame,
+                            image=play_photo,
+                            bd=0,
+                            highlightthickness=0,
+                            # NO bg= → fully transparent except circle pixels
+                        )
+                        play_overlay.image = play_photo
+                        play_overlay.place(relx=0.5, rely=0.5, anchor='center')
+
+                        # Hover: cursor + optional glow
+                        def on_enter(e):
+                            play_overlay.config(cursor='hand2')
+                            # Optional: slight scale or border glow
+                            play_overlay.config(highlightbackground='#00ff88', highlightthickness=2)
+
+                        def on_leave(e):
+                            play_overlay.config(cursor='')
+                            play_overlay.config(highlightthickness=0)
+
+                        for w in [thumb_frame, play_overlay]:
+                            w.bind('<Enter>', on_enter)
+                            w.bind('<Leave>', on_leave)
+
+                    except Exception as e:
+                        print(f"[Play PNG circular failed] {e}")
+                        # Fallback small text circle icon
+                        tk.Label(thumb_frame, text="▶", font=('Segoe UI', 48), fg='#ffffffcc', bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
+                    # Click to play (whole frame)
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
-                    play_icon.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
 
                     # Right-click download menu
-                    menu = tk.Menu(thumb_frame, tearoff=0, bg='#222', fg='#ddd', bd=0)
+                    menu = tk.Menu(thumb_frame, tearoff=0, bg='#1e1e2e', fg='#ddd', bd=0)
                     menu.add_command(label="Download video", command=lambda fp=file_path: download_file(fp))
                     thumb_frame.bind("<Button-3>", lambda e: menu.post(e.x_root, e.y_root))
 
                     label = thumb_frame
 
-                elif media_type in ['pdf', 'doc']:
+                elif media_type in ['pdf', 'doc', 'txt']:
+                    print(f"[DOC/PDF DEBUG] Processing {media_type} ID {media_id} - path: {file_path}")
+                    
                     doc_frame = tk.Frame(text, bg='#1a1a2e', width=240, height=160, bd=1, relief='flat')
                     
-                    # Try to generate real thumbnail for PDF
                     img_tk = None
-                    preview_text = original_filename[:20] + "..." if len(original_filename) > 20 else original_filename
+                    preview_text = original_filename[:18] + "..." if len(original_filename) > 18 else original_filename
                     
-                    if media_type == 'pdf' and file_path.lower().endswith('.pdf'):
+                    # Try real thumbnail based on actual file extension (not just media_type)
+                    is_pdf = file_path.lower().endswith('.pdf')
+                    if is_pdf:
+                        print("[PDF THUMB] File is PDF → attempting generation")
                         try:
+                            import fitz
+                            print("[PDF THUMB] fitz imported OK")
                             doc = fitz.open(file_path)
+                            print(f"[PDF THUMB] Opened document - {len(doc)} pages")
                             if len(doc) > 0:
                                 page = doc[0]
-                                zoom = 1.8  # higher for better quality thumbnail
+                                zoom = 2.0
                                 mat = fitz.Matrix(zoom, zoom)
                                 pix = page.get_pixmap(matrix=mat, alpha=False)
+                                print("[PDF THUMB] Pixmap generated")
                                 img_data = pix.tobytes("png")
                                 image = Image.open(io.BytesIO(img_data))
-                                image.thumbnail((220, 300))  # keep aspect, max width 220
+                                image.thumbnail((220, 320))
                                 img_tk = ImageTk.PhotoImage(image)
+                                print("[PDF THUMB] SUCCESS - thumbnail ready")
                             doc.close()
+                        except ImportError:
+                            print("[PDF THUMB] PyMuPDF missing - install: pip install pymupdf")
                         except Exception as e:
-                            print(f"[PDF thumb failed] {file_path}: {e}")
+                            print(f"[PDF THUMB] ERROR {file_path}: {type(e).__name__}: {str(e)}")
+                    else:
+                        print("[DOC THUMB] Non-PDF doc → using fallback")
                     
-                    # Create label with real thumbnail or fallback
-                    doc_label = tk.Label(
-                        doc_frame,
-                        image=img_tk,
-                        text=preview_text if not img_tk else "",  # hide text if thumbnail works
-                        compound='top' if not img_tk else 'none',
-                        bg='#1a1a2e', fg='#aaccff',
-                        wraplength=220,
-                        font=('Segoe UI', 9),
-                        justify='center'
-                    )
+                    # Label with thumbnail or fallback
                     if img_tk:
-                        doc_label.image = img_tk  # keep reference!
-                    doc_label.pack(pady=8, padx=8, expand=True, fill='both')
+                        doc_label = tk.Label(doc_frame, image=img_tk, bg='#1a1a2e')
+                        doc_label.image = img_tk  # MUST keep reference
+                        print("[DOC/PDF] Displaying real thumbnail")
+                    else:
+                        fallback_icon = "📄" if is_pdf else "📝"
+                        doc_label = tk.Label(
+                            doc_frame,
+                            text=f"{fallback_icon}\n{preview_text}",
+                            bg='#1a1a2e', fg='#aaccff',
+                            font=('Segoe UI', 18),
+                            wraplength=220,
+                            justify='center'
+                        )
+                        print("[DOC/PDF] Displaying fallback icon/text")
                     
-                    # Download icon (top-right, hover effect)
+                    doc_label.pack(pady=10, padx=10, expand=True, fill='both')
+                    
+                    # Download icon top-right with hover
                     dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
                                        fg='#88ff88', bg='#1a1a2e')
                     dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
@@ -704,17 +754,15 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
                     def on_leave(e):
                         dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
-
-                    doc_frame.bind('<Enter>', on_enter)
-                    doc_frame.bind('<Leave>', on_leave)
-                    dl_icon.bind('<Enter>', on_enter)
-                    dl_icon.bind('<Leave>', on_leave)
-
-                    # Click icon to download
+                    
+                    for widget in (doc_frame, doc_label, dl_icon):
+                        widget.bind('<Enter>', on_enter)
+                        widget.bind('<Leave>', on_leave)
+                    
                     dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
-
+                    
                     label = doc_frame
-
+ 
                 if label:
                     label.media_id = media_id
                     try:
@@ -762,26 +810,54 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             #   Media action helpers
             # ───────────────────────────────────────────────
             def play_video(file_path):
-                """Open video file with default system player"""
+                """Reliable cross-platform video playback using system default"""
                 import subprocess
                 import sys
                 import os
-    
+                from tkinter import messagebox
+
+                print(f"[PLAY VIDEO] Starting playback for: {file_path}")
+
                 if not os.path.exists(file_path):
-                    print(f"Video file not found: {file_path}")
+                    messagebox.showerror("File Not Found", f"Video file missing:\n{file_path}")
                     return
-    
+
                 try:
-                    if sys.platform == "darwin":       # macOS
+                    if sys.platform.startswith('linux'):
+                        print("[PLAY] Linux - using xdg-open via shell")
+                        # Use shell=True + & to detach completely + inherit env/session
+                        subprocess.call(
+                            f'xdg-open "{file_path}" &',
+                            shell=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            close_fds=True
+                        )
+                        print("[PLAY] xdg-open command sent")
+
+                    elif sys.platform == 'darwin':
                         subprocess.call(['open', file_path])
-                    elif sys.platform == "win32":      # Windows
+
+                    elif sys.platform.startswith('win'):
                         os.startfile(file_path)
-                    else:                              # Linux
-                        subprocess.call(['xdg-open', file_path])
+
+                    else:
+                        raise OSError("Unsupported OS")
+
+                    # Small non-blocking confirmation
+                    self.current_editor_frame.after(500, lambda: 
+                        messagebox.showinfo("Starting", "Video opening in default player...", 
+                                            parent=self.current_editor_frame))
+
                 except Exception as e:
-                    print(f"Could not open video: {e}")
-                    # Optional: show messagebox
-                    # messagebox.showerror("Error", f"Cannot play video:\n{e}")
+                    print(f"[PLAY ERROR] {type(e).__name__}: {str(e)}")
+                    messagebox.showerror(
+                        "Playback Error",
+                        f"Cannot open video.\n\n"
+                        f"Error: {str(e)}\n\n"
+                        f"Try opening manually: {file_path}"
+                    )
+
     
             def download_file(file_path):
                 """Let user choose where to save a copy of the media file"""
