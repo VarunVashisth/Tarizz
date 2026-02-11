@@ -474,56 +474,78 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             tk.Button(toolbar, text="Video", command=lambda: insert_new_media('video'), **btn_style).pack(side='left', padx=5)
             tk.Button(toolbar, text="Document", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=5)
             
-            sorted_media = sorted(media_list, key=lambda m: parse_index(m['position_index']), reverse=True)
-            
+            # Reload media safely
+            media_list = get_media_for_node(node_id)
+            print(f"[Reload] {len(media_list)} media items for node {node_id}")
+
+            def parse_index(idx):
+                if not idx or '.' not in idx:
+                    return (0, 0)
+                try:
+                    line, char = map(int, idx.split('.'))
+                    return line, char
+                except:
+                    return (0, 0)
+
+            # Sort oldest first (low position to high) — prevents index shift issues
+            sorted_media = sorted(media_list, key=lambda m: parse_index(m['position_index']))
+
             for media in sorted_media:
-                pos = media['position_index'] or "end"
-                file_path = media['file_path']
-                original_filename = media['original_filename']
+                pos = media['position_index'] or "1.0"
+                file_path = media.get('file_path')
+                if not file_path or not os.path.exists(file_path):
+                    print(f"[SKIP] Missing file for media ID {media['id']}: {file_path}")
+                    continue
+
+                original_filename = media.get('original_filename', 'unnamed')
                 media_type = media['media_type']
                 media_id = media['id']
-                
+
+                print(f"[Reload] Inserting {media_type} ID {media_id} at {pos}")
+
+                label = None
+
                 if media_type == 'image':
-                    from PIL import Image, ImageTk
                     try:
                         img = Image.open(file_path)
-                        img.thumbnail((200, 200))
+                        img.thumbnail((300, 300))
                         photo = ImageTk.PhotoImage(img)
                         label = tk.Label(text, image=photo, bg='#333333', cursor='sb_h_double_arrow')
                         label.image = photo
                         label.bind('<Button-1>', lambda e, l=label, i=img: start_resize(e, l, i))
                         label.bind('<B1-Motion>', lambda e, l=label, i=img: do_resize(e, l, i))
-                    except:
+                    except Exception as e:
+                        print(f"[Image fail] {e}")
                         label = tk.Label(text, text="[Broken Image]", bg='red', fg='white')
-                    label.media_id = media_id
-                
+
                 elif media_type == 'video':
-                    thumb_frame = tk.Frame(text, bg='#333333', width=200, height=150)
-                    # Placeholder thumbnail (no real extract without extra libs)
-                    tk.Label(thumb_frame, text='▶ Video: ' + original_filename[:20], bg='#333333', fg='#cccccc', wraplength=180).pack(pady=10)
+                    thumb_frame = tk.Frame(text, bg='#1e3a1e', width=320, height=180)
+                    tk.Label(thumb_frame, text='▶ Video: ' + original_filename[:25], 
+                             bg='#1e3a1e', fg='#88ff88', wraplength=300).pack(expand=True, pady=20)
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
-                    menu = tk.Menu(thumb_frame, tearoff=0)
+                    menu = tk.Menu(thumb_frame, tearoff=0, bg='#222222', fg='#cccccc')
                     menu.add_command(label='Download', command=lambda fp=file_path: download_file(fp))
                     thumb_frame.bind('<Button-3>', lambda e: menu.post(e.x_root, e.y_root))
                     label = thumb_frame
-                    label.media_id = media_id
-                
+
                 elif media_type in ['pdf', 'doc']:
-                    doc_frame = tk.Frame(text, bg='#2a2a3a', width=220, height=100)
-                    # Placeholder thumbnail
-                    tk.Label(doc_frame, text='📄 Doc: ' + original_filename[:20], bg='#2a2a3a', fg='#aaffaa', wraplength=200).pack(pady=4)
-                    tk.Button(doc_frame, text="↓ Save", command=lambda fp=file_path: download_file(fp), bg='#3a5a3a', fg='white', relief='flat', padx=8).pack(side='bottom', pady=4)
+                    doc_frame = tk.Frame(text, bg='#2a2a3a', width=220, height=120)
+                    tk.Label(doc_frame, text='📄 ' + original_filename[:22] + '...', 
+                             bg='#2a2a3a', fg='#aaffaa', wraplength=200).pack(pady=10)
+                    tk.Button(doc_frame, text="↓ Save", command=lambda fp=file_path: download_file(fp),
+                              bg='#3a5a3a', fg='white', relief='flat', padx=10).pack(side='bottom', pady=8)
                     label = doc_frame
+
+                if label:
                     label.media_id = media_id
-                
-                try:
-                    insert_pos = pos if pos else "end"
-                    text.window_create(insert_pos, window=label)
-                except tk.TclError as e:
-                    print(f"window create failed at {pos}: {e}")   # debug
-                    text.window_create("end", window=label)  # fallback to end
-
-
+                    try:
+                        text.window_create(pos, window=label)
+                        # NO extra insert here — keeps layout stable
+                    except tk.TclError as e:
+                        print(f"[Window create fail] at {pos}: {e}")
+                        text.window_create("end", window=label)
+                else:
+                    print(f"[SKIP] No label created for media {media_id}")
 
                     # ───────────────────────────────────────────────
         #   Image resize helpers
