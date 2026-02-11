@@ -383,6 +383,96 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     return line, char
                 except:
                     return (0, 0)
+                
+                        # ───────────────────────────────────────────────
+            #   Toolbar — only for inserting NEW media
+            # ───────────────────────────────────────────────
+            toolbar = tk.Frame(frame, bg='#181818', height=38)
+            toolbar.pack(side='top', fill='x', pady=(0, 6))
+            toolbar.pack_propagate(False)
+
+            btn_style = {
+                'bg': '#252525', 'fg': '#d0d0d0',
+                'activebackground': '#353535', 'activeforeground': 'white',
+                'relief': 'flat', 'bd': 0,
+                'font': ('Segoe UI', 10), 'padx': 14, 'pady': 6,
+                'cursor': 'hand2', 'highlightthickness': 0
+            }
+
+            def insert_new_media(media_type):
+                # File dialog for new insertion
+                filetypes = []
+                if media_type == 'image':
+                    filetypes = [("Images", "*.png *.jpg *.jpeg *.gif *.webp")]
+                elif media_type == 'video':
+                    filetypes = [("Videos", "*.mp4 *.mov *.avi *.mkv")]
+                elif media_type == 'doc':
+                    filetypes = [("Documents", "*.pdf *.doc *.docx *.txt")]
+
+                file_path = filedialog.askopenfilename(
+                    title=f"Insert {media_type.capitalize()}",
+                    filetypes=filetypes + [("All files", "*.*")]
+                )
+
+                if not file_path or not os.path.exists(file_path):
+                    return
+
+                original_filename = os.path.basename(file_path)
+                insert_pos = text.index("insert")
+
+                # Save to DB first
+                media_id = save_media(
+                    self.current_node_id,
+                    media_type,
+                    file_path,
+                    original_filename,
+                    insert_pos
+                )
+
+                # Now embed it (copy-paste your widget creation code here)
+                label = None
+
+                if media_type == 'image':
+                    try:
+                        img = Image.open(file_path)
+                        img.thumbnail((400, 400))
+                        photo = ImageTk.PhotoImage(img)
+                        label = tk.Label(text, image=photo, bg='#333333', cursor='sb_h_double_arrow')
+                        label.image = photo
+                        label.bind('<Button-1>', lambda e, l=label, i=img: start_resize(e, l, i))
+                        label.bind('<B1-Motion>', lambda e, l=label, i=img: do_resize(e, l, i))
+                    except:
+                        label = tk.Label(text, text="[Image Error]", bg='red', fg='white')
+
+                elif media_type == 'video':
+                    # Paste your video thumb_frame code here (from reload block)
+                    thumb_frame = tk.Frame(text, bg='#1e3a1e', width=320, height=180)
+                    tk.Label(thumb_frame, text='▶ ' + original_filename[:25], 
+                             bg='#1e3a1e', fg='#88ff88').pack(expand=True)
+                    thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+                    # ... add menu etc. ...
+                    label = thumb_frame
+
+                elif media_type == 'doc':
+                    # Paste your doc_frame code here
+                    doc_frame = tk.Frame(text, bg='#2a2a3a', width=220, height=120)
+                    tk.Label(doc_frame, text='📄 ' + original_filename[:20], 
+                             bg='#2a2a3a', fg='#aaffaa').pack(pady=10)
+                    tk.Button(doc_frame, text="↓ Save", command=lambda fp=file_path: download_file(fp),
+                              bg='#3a5a3a', fg='white', relief='flat').pack(side='bottom')
+                    label = doc_frame
+
+                if label:
+                    label.media_id = media_id
+                    try:
+                        text.window_create(insert_pos, window=label)
+                    except tk.TclError:
+                        text.window_create("end", window=label)
+
+            # Add the 3 buttons
+            tk.Button(toolbar, text="Image", command=lambda: insert_new_media('image'), **btn_style).pack(side='left', padx=5)
+            tk.Button(toolbar, text="Video", command=lambda: insert_new_media('video'), **btn_style).pack(side='left', padx=5)
+            tk.Button(toolbar, text="Document", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=5)
             
             sorted_media = sorted(media_list, key=lambda m: parse_index(m['position_index']), reverse=True)
             
@@ -427,10 +517,11 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     label.media_id = media_id
                 
                 try:
-                    text.window_create(pos, window=label)
-                    text.insert(f"{pos}+1c", '\n')
+                    insert_pos = pos if pos else "end"
+                    text.window_create(insert_pos, window=label)
                 except tk.TclError as e:
-                    print(f"Insert failed at {pos}: {e}")  # debug
+                    print(f"window create failed at {pos}: {e}")   # debug
+                    text.window_create("end", window=label)  # fallback to end
 
 
 
