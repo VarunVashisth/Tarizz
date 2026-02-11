@@ -1,9 +1,12 @@
 # project_manager.py
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox , filedialog
+
+import cv2
 from simple_text_editor import create_text_editor
 import sys
 import os
+import io
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend.database import (
     create_node, get_nodes, get_all_nodes_for_project,
@@ -13,6 +16,7 @@ from backend.database import (
 )
 from flowchart import FlowchartEditor
 from PIL import Image, ImageTk
+import fitz
 
 def create_project_manager(parent, project_data=None, parent_card=None):
     """
@@ -445,21 +449,109 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         label = tk.Label(text, text="[Image Error]", bg='red', fg='white')
 
                 elif media_type == 'video':
-                    # Paste your video thumb_frame code here (from reload block)
-                    thumb_frame = tk.Frame(text, bg='#1e3a1e', width=320, height=180)
-                    tk.Label(thumb_frame, text='▶ ' + original_filename[:25], 
-                             bg='#1e3a1e', fg='#88ff88').pack(expand=True)
+                    thumb_frame = tk.Frame(text, bg='#111', width=360, height=200, bd=0, relief='flat')
+
+                    # Background thumbnail (placeholder or real)
+                    try:
+                        cap = cv2.VideoCapture(file_path)
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret:
+                                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                img = Image.fromarray(frame)
+                                img.thumbnail((360, 200))
+                                photo = ImageTk.PhotoImage(img)
+                                bg_label = tk.Label(thumb_frame, image=photo, bg='#111')
+                                bg_label.image = photo
+                                bg_label.place(relx=0.5, rely=0.5, anchor='center')
+                    except:
+                        bg_label = tk.Label(thumb_frame, text="Video", bg='#222', fg='#888')
+                        bg_label.place(relx=0.5, rely=0.5, anchor='center')
+
+                    # Big centered play icon (semi-transparent)
+                    play_icon = tk.Label(thumb_frame, text="▶", font=('Segoe UI', 60, 'bold'),
+                                         fg='#ffffff', bg=thumb_frame.cget('bg'))  # transparent bg
+                    play_icon.place(relx=0.5, rely=0.5, anchor='center')
+
+                    # Hover effect: slight scale + opacity
+                    def on_enter(e):
+                        play_icon.config(fg='#00ff99', font=('Segoe UI', 74, 'bold'))
+                    def on_leave(e):
+                        play_icon.config(fg='#ffffff', font=('Segoe UI', 68, 'bold'))
+
+                    thumb_frame.bind('<Enter>', on_enter)
+                    thumb_frame.bind('<Leave>', on_leave)
+                    play_icon.bind('<Enter>', on_enter)
+                    play_icon.bind('<Leave>', on_leave)
+
+                    # Click to play
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
-                    # ... add menu etc. ...
+                    play_icon.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+
+                    # Right-click download menu
+                    menu = tk.Menu(thumb_frame, tearoff=0, bg='#222', fg='#ddd', bd=0)
+                    menu.add_command(label="Download video", command=lambda fp=file_path: download_file(fp))
+                    thumb_frame.bind("<Button-3>", lambda e: menu.post(e.x_root, e.y_root))
+
                     label = thumb_frame
 
-                elif media_type == 'doc':
-                    # Paste your doc_frame code here
-                    doc_frame = tk.Frame(text, bg='#2a2a3a', width=220, height=120)
-                    tk.Label(doc_frame, text='📄 ' + original_filename[:20], 
-                             bg='#2a2a3a', fg='#aaffaa').pack(pady=10)
-                    tk.Button(doc_frame, text="↓ Save", command=lambda fp=file_path: download_file(fp),
-                              bg='#3a5a3a', fg='white', relief='flat').pack(side='bottom')
+
+                elif media_type in ['pdf', 'doc']:
+                    doc_frame = tk.Frame(text, bg='#1a1a2e', width=240, height=160, bd=1, relief='flat')
+                    
+                    # Try to generate real thumbnail for PDF
+                    img_tk = None
+                    preview_text = original_filename[:20] + "..." if len(original_filename) > 20 else original_filename
+                    
+                    if media_type == 'pdf' and file_path.lower().endswith('.pdf'):
+                        try:
+                            doc = fitz.open(file_path)
+                            if len(doc) > 0:
+                                page = doc[0]
+                                zoom = 1.8  # higher for better quality thumbnail
+                                mat = fitz.Matrix(zoom, zoom)
+                                pix = page.get_pixmap(matrix=mat, alpha=False)
+                                img_data = pix.tobytes("png")
+                                image = Image.open(io.BytesIO(img_data))
+                                image.thumbnail((220, 300))  # keep aspect, max width 220
+                                img_tk = ImageTk.PhotoImage(image)
+                            doc.close()
+                        except Exception as e:
+                            print(f"[PDF thumb failed] {file_path}: {e}")
+                    
+                    # Create label with real thumbnail or fallback
+                    doc_label = tk.Label(
+                        doc_frame,
+                        image=img_tk,
+                        text=preview_text if not img_tk else "",  # hide text if thumbnail works
+                        compound='top' if not img_tk else 'none',
+                        bg='#1a1a2e', fg='#aaccff',
+                        wraplength=220,
+                        font=('Segoe UI', 9),
+                        justify='center'
+                    )
+                    if img_tk:
+                        doc_label.image = img_tk  # keep reference!
+                    doc_label.pack(pady=8, padx=8, expand=True, fill='both')
+                    
+                    # Download icon (top-right, hover effect)
+                    dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
+                                       fg='#88ff88', bg='#1a1a2e')
+                    dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
+                    
+                    def on_enter(e):
+                        dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
+                    def on_leave(e):
+                        dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
+
+                    doc_frame.bind('<Enter>', on_enter)
+                    doc_frame.bind('<Leave>', on_leave)
+                    dl_icon.bind('<Enter>', on_enter)
+                    dl_icon.bind('<Leave>', on_leave)
+
+                    # Click icon to download
+                    dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
+
                     label = doc_frame
 
                 if label:
@@ -519,21 +611,108 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         label = tk.Label(text, text="[Broken Image]", bg='red', fg='white')
 
                 elif media_type == 'video':
-                    thumb_frame = tk.Frame(text, bg='#1e3a1e', width=320, height=180)
-                    tk.Label(thumb_frame, text='▶ Video: ' + original_filename[:25], 
-                             bg='#1e3a1e', fg='#88ff88', wraplength=300).pack(expand=True, pady=20)
+                    thumb_frame = tk.Frame(text, bg='#111', width=360, height=200, bd=0, relief='flat')
+
+                    # Background thumbnail (placeholder or real)
+                    try:
+                        cap = cv2.VideoCapture(file_path)
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret:
+                                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                img = Image.fromarray(frame)
+                                img.thumbnail((360, 200))
+                                photo = ImageTk.PhotoImage(img)
+                                bg_label = tk.Label(thumb_frame, image=photo, bg='#111')
+                                bg_label.image = photo
+                                bg_label.place(relx=0.5, rely=0.5, anchor='center')
+                    except:
+                        bg_label = tk.Label(thumb_frame, text="Video", bg='#222', fg='#888')
+                        bg_label.place(relx=0.5, rely=0.5, anchor='center')
+
+                    # Big centered play icon (semi-transparent)
+                    play_icon = tk.Label(thumb_frame, text="▶", font=('Segoe UI', 60, 'bold'),
+                                         fg='#ffffff', bg=thumb_frame.cget('bg'))  # transparent bg
+                    play_icon.place(relx=0.5, rely=0.5, anchor='center')
+
+                    # Hover effect: slight scale + opacity
+                    def on_enter(e):
+                        play_icon.config(fg='#00ff99', font=('Segoe UI', 74, 'bold'))
+                    def on_leave(e):
+                        play_icon.config(fg='#ffffff', font=('Segoe UI', 68, 'bold'))
+
+                    thumb_frame.bind('<Enter>', on_enter)
+                    thumb_frame.bind('<Leave>', on_leave)
+                    play_icon.bind('<Enter>', on_enter)
+                    play_icon.bind('<Leave>', on_leave)
+
+                    # Click to play
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
-                    menu = tk.Menu(thumb_frame, tearoff=0, bg='#222222', fg='#cccccc')
-                    menu.add_command(label='Download', command=lambda fp=file_path: download_file(fp))
-                    thumb_frame.bind('<Button-3>', lambda e: menu.post(e.x_root, e.y_root))
+                    play_icon.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+
+                    # Right-click download menu
+                    menu = tk.Menu(thumb_frame, tearoff=0, bg='#222', fg='#ddd', bd=0)
+                    menu.add_command(label="Download video", command=lambda fp=file_path: download_file(fp))
+                    thumb_frame.bind("<Button-3>", lambda e: menu.post(e.x_root, e.y_root))
+
                     label = thumb_frame
 
                 elif media_type in ['pdf', 'doc']:
-                    doc_frame = tk.Frame(text, bg='#2a2a3a', width=220, height=120)
-                    tk.Label(doc_frame, text='📄 ' + original_filename[:22] + '...', 
-                             bg='#2a2a3a', fg='#aaffaa', wraplength=200).pack(pady=10)
-                    tk.Button(doc_frame, text="↓ Save", command=lambda fp=file_path: download_file(fp),
-                              bg='#3a5a3a', fg='white', relief='flat', padx=10).pack(side='bottom', pady=8)
+                    doc_frame = tk.Frame(text, bg='#1a1a2e', width=240, height=160, bd=1, relief='flat')
+                    
+                    # Try to generate real thumbnail for PDF
+                    img_tk = None
+                    preview_text = original_filename[:20] + "..." if len(original_filename) > 20 else original_filename
+                    
+                    if media_type == 'pdf' and file_path.lower().endswith('.pdf'):
+                        try:
+                            doc = fitz.open(file_path)
+                            if len(doc) > 0:
+                                page = doc[0]
+                                zoom = 1.8  # higher for better quality thumbnail
+                                mat = fitz.Matrix(zoom, zoom)
+                                pix = page.get_pixmap(matrix=mat, alpha=False)
+                                img_data = pix.tobytes("png")
+                                image = Image.open(io.BytesIO(img_data))
+                                image.thumbnail((220, 300))  # keep aspect, max width 220
+                                img_tk = ImageTk.PhotoImage(image)
+                            doc.close()
+                        except Exception as e:
+                            print(f"[PDF thumb failed] {file_path}: {e}")
+                    
+                    # Create label with real thumbnail or fallback
+                    doc_label = tk.Label(
+                        doc_frame,
+                        image=img_tk,
+                        text=preview_text if not img_tk else "",  # hide text if thumbnail works
+                        compound='top' if not img_tk else 'none',
+                        bg='#1a1a2e', fg='#aaccff',
+                        wraplength=220,
+                        font=('Segoe UI', 9),
+                        justify='center'
+                    )
+                    if img_tk:
+                        doc_label.image = img_tk  # keep reference!
+                    doc_label.pack(pady=8, padx=8, expand=True, fill='both')
+                    
+                    # Download icon (top-right, hover effect)
+                    dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
+                                       fg='#88ff88', bg='#1a1a2e')
+                    dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
+                    
+                    def on_enter(e):
+                        dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
+                    def on_leave(e):
+                        dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
+
+                    doc_frame.bind('<Enter>', on_enter)
+                    doc_frame.bind('<Leave>', on_leave)
+                    dl_icon.bind('<Enter>', on_enter)
+                    dl_icon.bind('<Leave>', on_leave)
+
+                    # Click icon to download
+                    dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
+
                     label = doc_frame
 
                 if label:
