@@ -24,12 +24,12 @@ class FlowchartEditor(tk.Frame):
         toolbar = tk.Frame(self, bg='#222222')
         toolbar.pack(side='top', fill='x')
         btn_style = {
-            'bg': '#222222', 'fg': '#cccccc',
+            'bg': '#222222', 'fg': "#3a3636",
             'activebackground': '#333333', 'activeforeground': '#ffffff',
             'relief': 'flat', 'bd': 0,
             'font': ('Segoe UI', 10), 'highlightthickness': 0,
             'padx': 6, 'pady': 4, 'cursor': 'hand2',
-            'borderwidth': 1, 'highlightbackground': '#cccccc', 'highlightcolor': '#ccccccc',
+            'borderwidth': 1, 'highlightbackground': '#3a3636', 'highlightcolor': '#3a3636',
         }
 
         for text, tool in [('Pointer','pointer'),('Rectangle','rectangle'),('Oval','oval'),
@@ -66,7 +66,10 @@ class FlowchartEditor(tk.Frame):
         parent.bind_all("<Control-t>", self.text_hotkey)
         parent.bind("<Configure>", lambda e: self.draw_grid())
 
+        self.canvas.bind("<Escape>", self.cancel_text_mode)
+
         self.after_idle(self.draw_grid)
+
 
     def set_color(self , color):
         self.current_color = color
@@ -97,10 +100,97 @@ class FlowchartEditor(tk.Frame):
         self.current_item = None
         self.canvas.config(cursor='arrow' if tool=='pointer' else 'cross')
 
+
     def text_hotkey(self, event):
+        """Ctrl+T → Text mode: click shape to add/edit text"""
+        # Toggle off if active
+        if self.current_tool == 'text':
+            self.cancel_text_mode(event)
+            return
+
         self.current_tool = 'text'
         self.canvas.config(cursor='xterm')
 
+        # Hint (persistent)
+        self.canvas.delete("text_hint")
+        self.canvas.create_text(
+            20, 20,
+            text="Click a shape to add/edit text\nPress Esc to cancel",
+            fill='#888888', font=('Segoe UI', 9), anchor='nw',
+            tags="text_hint"
+        )
+
+        def handle_click(evt):
+            # Safety check
+            if self.current_tool != 'text':
+                return
+
+            # Find shape
+            items = self.canvas.find_overlapping(evt.x-8, evt.y-8, evt.x+8, evt.y+8)
+            target = None
+            for item in reversed(items):
+                if 'shape' in self.canvas.gettags(item):
+                    target = item
+                    break
+
+            # Show dialog (blocks execution)
+            if target:
+                current_text = ""
+                if target in self.text_items:
+                    current_text = self.canvas.itemcget(self.text_items[target], 'text')
+
+                new_text = simpledialog.askstring(
+                    "Text",
+                    "Enter or edit text for shape:",
+                    initialvalue=current_text,
+                    parent=self.winfo_toplevel()
+                )
+
+                if new_text is not None:  # OK pressed
+                    if target not in self.text_items:
+                        cx = (self.canvas.coords(target)[0] + self.canvas.coords(target)[2]) / 2
+                        cy = (self.canvas.coords(target)[1] + self.canvas.coords(target)[3]) / 2
+                        tid = self.canvas.create_text(
+                            cx, cy,
+                            text=new_text,
+                            fill='#e0e0ff',
+                            font=('Segoe UI', 12),
+                            tags=('attached_text',)
+                        )
+                        self.text_items[target] = tid
+                        self.text_fonts[target] = 12
+                    else:
+                        tid = self.text_items[target]
+                        self.canvas.itemconfig(tid, text=new_text)
+
+                    self.update_shape_size(target, new_text)
+
+            # Exit mode AFTER dialog (or click outside)
+            self.cancel_text_mode(evt)
+
+        # Bind click - KEEP ALIVE until explicit cancel
+        if hasattr(self, '_text_click_id'):
+            try:
+                self.canvas.unbind("<Button-1>", self._text_click_id)
+            except:
+                pass
+
+        self._text_click_id = self.canvas.bind("<Button-1>", handle_click, add=True)  # add=True prevents overwriting other bindings
+
+        print("[TEXT MODE] ENTERED — click shape or Esc to exit")
+
+    def cancel_text_mode(self, event=None):
+        if self.current_tool == 'text':
+            self.current_tool = 'pointer'
+            self.canvas.config(cursor='arrow')
+            self.canvas.delete("text_hint")
+            if hasattr(self, '_text_click_id'):
+                try:
+                    self.canvas.unbind("<Button-1>", self._text_click_id)
+                    del self._text_click_id
+                except:
+                    pass
+            print("[TEXT MODE] EXITED")
     def measure_text(self, text, font_size=12):
         f = tkFont.Font(family='Segoe UI', size=int(font_size))
         width = f.measure(text) + 20
@@ -108,29 +198,49 @@ class FlowchartEditor(tk.Frame):
         return width, height
 
     def update_shape_size(self, shape, text):
-        text_width, text_height = self.measure_text(text, self.text_fonts.get(shape,12))
+        if not text:
+            return
+
+        base_font_size = self.text_fonts.get(shape, 12)
+        text_width, text_height = self.measure_text(text, base_font_size)
+
+        # Generous symmetric padding
+        padding_x = 50
+        padding_y = 40
+
+        # Minimum sizes to avoid tiny shapes
+        min_width = 140
+        min_height = 70
+
+        width = max(text_width + padding_x * 2, min_width)
+        height = max(text_height + padding_y * 2, min_height)
+
         shape_type = self.canvas.type(shape)
-        if shape_type in ['rectangle','oval']:
-            aspect_ratio = 2
-            width = max(text_width, text_height*aspect_ratio)
-            height = width/aspect_ratio
-            cx = (self.canvas.coords(shape)[0] + self.canvas.coords(shape)[2])/2
-            cy = (self.canvas.coords(shape)[1] + self.canvas.coords(shape)[3])/2
-            self.canvas.coords(shape, cx-width/2, cy-height/2, cx+width/2, cy+height/2)
-        elif shape_type == 'polygon':
-            aspect_ratio = 2
-            width = max(text_width, text_height*aspect_ratio)
-            height = width/aspect_ratio
-            cx = (self.canvas.coords(shape)[0] + self.canvas.coords(shape)[4])/2
-            cy = (self.canvas.coords(shape)[1] + self.canvas.coords(shape)[5])/2
-            points = [cx, cy-height/2, cx+width/2, cy, cx, cy+height/2, cx-width/2, cy]
+
+        cx = (self.canvas.coords(shape)[0] + self.canvas.coords(shape)[2]) / 2
+        cy = (self.canvas.coords(shape)[1] + self.canvas.coords(shape)[3]) / 2
+
+        if shape_type in ['rectangle', 'oval']:
+            self.canvas.coords(shape,
+                               cx - width/2, cy - height/2,
+                               cx + width/2, cy + height/2)
+
+        elif shape_type == 'polygon':  # diamond
+            points = [
+                cx, cy - height/2,
+                cx + width/2, cy,
+                cx, cy + height/2,
+                cx - width/2, cy
+            ]
             self.canvas.coords(shape, *points)
+
+        # Center text
         if shape in self.text_items:
             self.canvas.coords(self.text_items[shape], cx, cy)
             self.canvas.itemconfig(self.text_items[shape],
-                                   font=('Segoe UI', int(self.text_fonts.get(shape,12)*self.zoom_factor)))
-        self.update_scrollregion()
+                                   font=('Segoe UI', int(base_font_size * self.zoom_factor)))
 
+        self.update_scrollregion()
     def update_scrollregion(self):
         bbox = self.canvas.bbox('all')
         if bbox:
@@ -150,35 +260,62 @@ class FlowchartEditor(tk.Frame):
                     break
         elif self.current_tool in ['rectangle','oval','diamond']:
             x, y = self.start_x, self.start_y
+
             if self.current_tool == 'rectangle':
-                item = self.canvas.create_rectangle(x-50,y-25,x+50,y+25,
-                                                    fill='#333333', outline='#cccccc', width=3, stipple='', joinstyle='round', tags='shape')
+                item = self.canvas.create_rectangle(
+                    x-60, y-30, x+60, y+30,
+                    fill='#2a2a3a',           # safe dark fill
+                    outline='#6666aa',        # safe outline
+                    width=3,
+                    tags='shape'
+                )
             elif self.current_tool == 'oval':
-                item = self.canvas.create_oval(x-50,y-25,x+50,y+25,
-                                               fill='#333333', outline='#cccccc', width=2, tags='shape')
+                item = self.canvas.create_oval(
+                    x-60, y-30, x+60, y+30,
+                    fill='#2a2a3a',
+                    outline='#6666aa',
+                    width=3,
+                    tags='shape'
+                )
             elif self.current_tool == 'diamond':
-                points = [x,y-30, x+50,y, x,y+30, x-50,y]
-                item = self.canvas.create_polygon(points, fill='#333333', outline='#cccccc', width=2, tags='shape')
+                points = [x, y-35, x+70, y, x, y+35, x-70, y]
+                item = self.canvas.create_polygon(
+                    points,
+                    fill='#2a2a3a',
+                    outline='#6666aa',
+                    width=3,
+                    smooth=False,  # nice rounded diamond
+                    tags='shape'
+                )
+
             self.shapes.append(item)
             self.update_scrollregion()
         elif self.current_tool in ['line','arrow']:
             arrow_type = 'last' if self.current_tool=='arrow' else None
             self.current_item = self.canvas.create_line(self.start_x,self.start_y,self.start_x,self.start_y,
-                                                        fill='#cccccc', width=2, arrow=arrow_type)
+                                                        fill='#e0e0ff', width=2, arrow=arrow_type)
             self.lines.append(self.current_item)
             self.update_scrollregion()
         elif self.current_tool == 'delete':
-            items = self.canvas.find_overlapping(self.start_x-1,self.start_y-1,self.start_x+1,self.start_y+1)
-            for item in items:
-                if 'shape' in self.canvas.gettags(item) or item in self.lines or item in self.text_items.values():
-                    self.canvas.delete(item)
-                    if item in self.shapes: self.shapes.remove(item)
-                    if item in self.lines: self.lines.remove(item)
-                    if item in getattr(self,'text_items',{}).values():
-                        key = [k for k,v in self.text_items.items() if v==item][0]
-                        del self.text_items[key]
-                    self.update_scrollregion()
-                    break
+                    items = self.canvas.find_overlapping(self.start_x-5, self.start_y-5,
+                                                         self.start_x+5, self.start_y+5)
+                    for item in items:
+                        tags = self.canvas.gettags(item)
+                        if 'shape' in tags or item in self.lines or item in self.text_items.values():
+                            # If it's a shape with text, delete the text too
+                            if 'shape' in tags and item in self.text_items:
+                                self.canvas.delete(self.text_items[item])
+                                del self.text_items[item]
+                                if item in self.text_fonts:
+                                    del self.text_fonts[item]
+        
+                            self.canvas.delete(item)
+                            if item in self.shapes:
+                                self.shapes.remove(item)
+                            if item in self.lines:
+                                self.lines.remove(item)
+                            self.update_scrollregion()
+                            break
         elif self.current_tool == 'text':
             items = self.canvas.find_overlapping(self.start_x-1,self.start_y-1,self.start_x+1,self.start_y+1)
             target = None
@@ -192,7 +329,7 @@ class FlowchartEditor(tk.Frame):
                     if target not in self.text_items:
                         tx, ty = (self.canvas.coords(target)[0]+self.canvas.coords(target)[2])/2, \
                                  (self.canvas.coords(target)[1]+self.canvas.coords(target)[3])/2
-                        tid = self.canvas.create_text(tx,ty,text=text, fill='#cccccc', font=('Segoe UI',12))
+                        tid = self.canvas.create_text(tx,ty,text=text, fill='#e0e0ff', font=('Segoe UI',12))
                         self.text_items[target] = tid
                         self.text_fonts[target] = 12
                     else:
@@ -212,18 +349,30 @@ class FlowchartEditor(tk.Frame):
         elif self.current_tool in ['line','arrow'] and self.current_item:
             self.canvas.coords(self.current_item,self.start_x,self.start_y,x,y)
             self.update_scrollregion()
+        self.save_flowchart(self.current_node_id)  # save after every change
 
     def snap(value):
         return round(value/GRID_SIZE)*GRID_SIZE
     
     def on_release(self, event):
-        self.current_item=None
-        self.move_start=None
+        if self.current_item is None:
+            return
 
-        coords = self.canvas.coords(self.current_item)
-        new_coords = [self.snap(c) for c in coords]
-        self.canvas.coords(self.current_item, *new_coords)
+        try:
+            # Only attempt coords if item still exists
+            if self.current_item in self.canvas.find_all():
+                coords = self.canvas.coords(self.current_item)
+                # Optional snap
+                # snapped = [round(c / GRID_SIZE) * GRID_SIZE for c in coords]
+                # self.canvas.coords(self.current_item, *snapped)
+            else:
+                print("[FLOW] Item was deleted during drag")
+        except tk.TclError:
+            print("[FLOW] Coords failed - item likely gone")
 
+        self.current_item = None
+        self.move_start = None
+        self.save_flowchart(self.current_node_id)  # save after every change
     def start_pan(self, event):
         self.pan_start = (event.x, event.y)
 
@@ -243,9 +392,138 @@ class FlowchartEditor(tk.Frame):
             base_size = self.text_fonts.get(shape, 12)
             self.canvas.itemconfig(tid, font=('Segoe UI', int(base_size*self.zoom_factor)))
         self.update_scrollregion()
+    
+    def save_flowchart(self, node_id):
+        """Save full canvas state including attached text"""
+        items_data = []
 
+        for item in self.shapes + self.lines:
+            try:
+                item_type = self.canvas.type(item)
+                coords = self.canvas.coords(item)
+                fill = self.canvas.itemcget(item, 'fill')
+                outline = self.canvas.itemcget(item, 'outline')
+                width = float(self.canvas.itemcget(item, 'width'))
+                tags = self.canvas.gettags(item)
 
+                data = {
+                    'type': item_type,
+                    'coords': coords,
+                    'fill': fill,
+                    'outline': outline,
+                    'width': width,
+                    'tags': list(tags)
+                }
 
+                if item_type == 'line':
+                    data['arrow'] = self.canvas.itemcget(item, 'arrow')
+
+                # Attached text
+                if item in self.text_items:
+                    tid = self.text_items[item]
+                    data['text'] = self.canvas.itemcget(tid, 'text')
+                    data['text_font'] = self.canvas.itemcget(tid, 'font')
+                    data['text_fill'] = self.canvas.itemcget(tid, 'fill')
+                    data['text_coords'] = self.canvas.coords(tid)
+
+                items_data.append(data)
+            except:
+                pass
+
+        state = {
+            'items': items_data,
+            'zoom_factor': self.zoom_factor,
+            'scroll_x': self.canvas.xview(),
+            'scroll_y': self.canvas.yview()
+        }
+
+        import json
+        json_state = json.dumps(state)
+
+        from backend.database import save_subpage
+        save_subpage(node_id, json_state)
+        print(f"[FLOW SAVE] Saved {len(items_data)} items")
+
+    def load_flowchart(self, node_id):
+        """Load full canvas state with attached text"""
+        from backend.database import load_subpage
+        data = load_subpage(node_id)
+
+        if not data or not isinstance(data, str):
+            return
+
+        try:
+            import json
+            state = json.loads(data)
+
+            self.canvas.delete('all')
+            self.shapes.clear()
+            self.lines.clear()
+            self.text_items.clear()
+            self.text_fonts.clear()
+
+            for item_data in state.get('items', []):
+                try:
+                    if item_data['type'] == 'rectangle':
+                        item = self.canvas.create_rectangle(*item_data['coords'],
+                                                            fill=item_data['fill'],
+                                                            outline=item_data['outline'],
+                                                            width=item_data['width'],
+                                                            tags=item_data['tags'])
+                        self.shapes.append(item)
+
+                    elif item_data['type'] == 'oval':
+                        item = self.canvas.create_oval(*item_data['coords'],
+                                                       fill=item_data['fill'],
+                                                       outline=item_data['outline'],
+                                                       width=item_data['width'],
+                                                       tags=item_data['tags'])
+                        self.shapes.append(item)
+
+                    elif item_data['type'] == 'polygon':
+                        item = self.canvas.create_polygon(item_data['coords'],
+                                                          fill=item_data['fill'],
+                                                          outline=item_data['outline'],
+                                                          width=item_data['width'],
+                                                          smooth=False,  # diamond sharp
+                                                          tags=item_data['tags'])
+                        self.shapes.append(item)
+
+                    elif item_data['type'] == 'line':
+                        item = self.canvas.create_line(*item_data['coords'],
+                                                       fill=item_data['fill'],
+                                                       width=item_data['width'],
+                                                       arrow=item_data.get('arrow'),
+                                                       tags=item_data['tags'])
+                        self.lines.append(item)
+
+                    # Restore attached text
+                    if 'text' in item_data:
+                        tx, ty = item_data.get('text_coords', item_data['coords'][:2])
+                        tid = self.canvas.create_text(tx, ty,
+                                                      text=item_data['text'],
+                                                      fill=item_data.get('text_fill', '#e0e0ff'),
+                                                      font=item_data.get('text_font', ('Segoe UI', 12)),
+                                                      tags=item_data['tags'])
+                        self.text_items[item] = tid
+                        self.text_fonts[item] = int(item_data['text_font'].split()[-1].replace('-', ''))
+
+                except Exception as e:
+                    print(f"[FLOW LOAD] Failed item: {e}")
+
+            self.zoom_factor = state.get('zoom_factor', 1.0)
+            self.canvas.scale('all', 0, 0, self.zoom_factor, self.zoom_factor)
+
+            scroll_x, scroll_y = state.get('scroll_x', (0,1)), state.get('scroll_y', (0,1))
+            self.canvas.xview_moveto(scroll_x[0])
+            self.canvas.yview_moveto(scroll_y[0])
+
+            self.update_scrollregion()
+            self.draw_grid()
+            print(f"[FLOW LOAD] Loaded {len(state.get('items', []))} items")
+
+        except Exception as e:
+            print(f"[FLOW LOAD] Full load failed: {e}")
 
     def export_png(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[("PNG files","*.png")])
@@ -281,6 +559,6 @@ class FlowchartEditor(tk.Frame):
         for shape, tid in self.text_items.items():
             text = self.canvas.itemcget(tid,'text')
             x, y = self.canvas.coords(tid)
-            draw.text((x, y), text, font=font, fill='#cccccc', anchor='mm')
+            draw.text((x, y), text, font=font, fill='#e0e0ff', anchor='mm')
         img.save(file_path)
         print(f"Flowchart exported to {file_path}")

@@ -286,10 +286,14 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             if not node_info:
                 return
             
-            # Save current page before switching
+            # Save current page BEFORE switching — but only if it's a subpage
             if self.current_node_id and self.current_editor:
-                if node_info['id'] != self.current_node_id:
-                   self.save_current_page()
+                if hasattr(self.current_editor, 'text_area'):  # only subpages have text_area
+                    if node_info['id'] != self.current_node_id:
+                        self.save_current_page()
+                elif hasattr(self.current_editor, 'save_flowchart'):  # flowchart
+                    if node_info['id'] != self.current_node_id:
+                        self.current_editor.save_flowchart(self.current_node_id)
             
             if node_info['node_type'] == 'folder':
                 # Folders don't open an editor
@@ -300,15 +304,29 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 self.open_subpage_editor(node_info['id'])
 
         def open_flowchart_editor(self, node_id: int):
-            """Open flowchart editor (not yet implemented with persistence)"""
+            """Open flowchart editor with safe save on close"""
             if self.current_editor_frame:
                 self.current_editor_frame.destroy()
             
             self.current_editor_frame = ttk.Frame(self.editor_container)
             self.current_editor_frame.pack(fill="both", expand=True)
-            self.current_editor = FlowchartEditor(self.current_editor_frame)
-            self.current_editor.pack(fill="both", expand=True)
+            
+            editor = FlowchartEditor(self.current_editor_frame)
+            editor.pack(fill="both", expand=True)
+            self.current_editor = editor
             self.current_node_id = node_id
+            
+            # Pass node_id & load immediately
+            editor.current_node_id = node_id
+            editor.load_flowchart(node_id)
+
+            # Safe save on destroy — check if canvas still exists
+            def on_editor_close():
+                if hasattr(editor, 'canvas') and editor.canvas.winfo_exists():
+                    editor.save_flowchart(node_id)
+                self.current_editor_frame.destroy()
+
+            self.current_editor_frame.bind("<Destroy>", lambda e: on_editor_close())
 
         def open_subpage_editor(self, node_id: int):
             """Open text editor for a subpage"""
@@ -324,13 +342,19 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             self.current_node_id = node_id
         
             text = editor.text_area
-            text.tag_configure('bold', font=(text.cget('font').split()[0], -12, 'bold'))
-            text.tag_configure('italic', font=(text.cget('font').split()[0], -12, 'italic'))
+            text.tag_configure('bold', font=('bold',))  # this adds bold to existing font
+
+            # Italic: add slant
+            text.tag_configure('italic', font=('italic',))
+
+            # Underline: just underline (no font change)
             text.tag_configure('underline', underline=True)
-            text.tag_configure('highlight', background='#ffff00', foreground='#000000')
-            text.tag_configure('code', font='Courier -12', background='#003300', foreground='#00ff00',
+
+            # Highlight & code stay as-is
+            text.tag_configure('highlight', background='#ffff99', foreground='#000000')
+            text.tag_configure('code', font='Courier -12', background='#1a3a1a', foreground='#88ff88',
                                lmargin1=10, lmargin2=10, rmargin=10)
-        
+   
             def toggle_tag(event=None, tag=None):
                 try:
                     sel_start = text.index(tk.SEL_FIRST)
@@ -371,12 +395,22 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 text.insert("1.0", content)
     
                 # Apply tags if present
-                for tag_name, ranges_list in tags_data.items():
-                    for start, end in ranges_list:
-                        try:
-                            text.tag_add(tag_name, start, end)
-                        except tk.TclError:
-                            pass  # ignore invalid indices
+            for tag_name, ranges_list in dump.get('tags', {}).items():
+                # Configure font/size tags on load if needed
+                if tag_name.startswith('font_'):
+                    family = tag_name.replace('font_', '').replace('_', ' ')
+                    text.tag_configure(tag_name, font=(family, text.cget('font').split()[1]))
+                elif tag_name.startswith('size_'):
+                    size = int(tag_name.replace('size_', ''))
+                    text.tag_configure(tag_name, font=(text.cget('font').split()[0], f'-{size}'))
+
+                # Apply ranges
+                for start_end in ranges_list:
+                    try:
+                        start, end = start_end
+                        text.tag_add(tag_name, start, end)
+                    except tk.TclError:
+                        pass  # ignore invalid ranges
                         # Load media
             media_list = get_media_for_node(node_id)
             
@@ -566,6 +600,73 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             tk.Button(toolbar, text="Image", command=lambda: insert_new_media('image'), **btn_style).pack(side='left', padx=5)
             tk.Button(toolbar, text="Video", command=lambda: insert_new_media('video'), **btn_style).pack(side='left', padx=5)
             tk.Button(toolbar, text="Document", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=5)
+
+            # Font family selector
+            fonts = ['Segoe UI', 'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana']
+            font_var = tk.StringVar(value='Segoe UI')  # default
+
+            font_menu = tk.OptionMenu(toolbar, font_var, *fonts,
+                                      command=lambda f: apply_font_family(f))
+            
+            # Safe style for the OptionMenu button itself
+            menu_btn_style = {k: v for k, v in btn_style.items() if k in ['bg', 'fg', 'activebackground', 'activeforeground', 'relief', 'bd', 'font', 'highlightthickness']}
+            font_menu.config(width=12, **menu_btn_style)
+            
+            # Safe style for the dropdown menu items
+            menu_items_style = {k: v for k, v in btn_style.items() if k in ['bg', 'fg', 'activebackground', 'activeforeground', 'font']}
+            font_menu['menu'].config(**menu_items_style)
+            
+            font_menu.pack(side='left', padx=4)
+            # Font size selector
+            sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48]
+            size_var = tk.StringVar(value='12')
+
+            size_menu = tk.OptionMenu(toolbar, size_var, *sizes,
+                                      command=lambda s: apply_font_size(int(s)))
+            
+            # Safe style for the OptionMenu button itself
+            menu_btn_style = {k: v for k, v in btn_style.items() if k in ['bg', 'fg', 'activebackground', 'activeforeground', 'relief', 'bd', 'font', 'highlightthickness']}
+            size_menu.config(width=6, **menu_btn_style)
+            
+            # Safe style for the dropdown menu items
+            menu_items_style = {k: v for k, v in btn_style.items() if k in ['bg', 'fg', 'activebackground', 'activeforeground', 'font']}
+            size_menu['menu'].config(**menu_items_style)
+            
+            size_menu.pack(side='left', padx=4)
+
+            def apply_font_family(family):
+                try:
+                    sel_start = text.index(tk.SEL_FIRST)
+                    sel_end = text.index(tk.SEL_LAST)
+                except tk.TclError:
+                    # No selection → apply to current insertion point
+                    sel_start = sel_end = text.index(tk.INSERT)
+
+                current_tags = text.tag_names(sel_start)
+                for tag in current_tags:
+                    if tag.startswith('font_'):
+                        text.tag_remove(tag, sel_start, sel_end)
+
+                tag_name = f"font_{family.replace(' ', '_')}"
+                text.tag_configure(tag_name, font=(family, text.cget('font').split()[1]))
+                text.tag_add(tag_name, sel_start, sel_end)
+
+            def apply_font_size(size):
+                try:
+                    sel_start = text.index(tk.SEL_FIRST)
+                    sel_end = text.index(tk.SEL_LAST)
+                except tk.TclError:
+                    sel_start = sel_end = text.index(tk.INSERT)
+
+                current_tags = text.tag_names(sel_start)
+                for tag in current_tags:
+                    if tag.startswith('size_'):
+                        text.tag_remove(tag, sel_start, sel_end)
+
+                tag_name = f"size_{size}"
+                text.tag_configure(tag_name, font=(text.cget('font').split()[0], f'-{size}'))
+                text.tag_add(tag_name, sel_start, sel_end)
+
             
             # Reload media safely
             media_list = get_media_for_node(node_id)
@@ -688,6 +789,23 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     menu.add_command(label="Download video", command=lambda fp=file_path: download_file(fp))
                     thumb_frame.bind("<Button-3>", lambda e: menu.post(e.x_root, e.y_root))
 
+                    # Hover effect — bind directly to thumb_frame & play_overlay
+                    def on_enter(e):
+                        play_overlay.config(cursor='hand2')
+                        # Optional glow
+                        play_overlay.config(highlightbackground='#00ff88', highlightthickness=2)
+                        print("Hover enter on", media_type, media_id)
+
+                    def on_leave(e):
+                        play_overlay.config(cursor='')
+                        play_overlay.config(highlightthickness=0)
+
+                    # Bind to both frame and overlay (covers all cases)
+                    thumb_frame.bind('<Enter>', on_enter)
+                    thumb_frame.bind('<Leave>', on_leave)
+                    play_overlay.bind('<Enter>', on_enter)
+                    play_overlay.bind('<Leave>', on_leave)
+
                     label = thumb_frame
 
                 elif media_type in ['pdf', 'doc', 'txt']:
@@ -749,18 +867,23 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
                                        fg='#88ff88', bg='#1a1a2e')
                     dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
-                    
+
                     def on_enter(e):
                         dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
+                        dl_icon.config(cursor='hand2')
+                        print("Hover enter on", media_type, media_id)
+
                     def on_leave(e):
                         dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
-                    
-                    for widget in (doc_frame, doc_label, dl_icon):
+                        dl_icon.config(cursor='')
+
+                    # Bind to ALL parts of the doc frame so hover works everywhere
+                    for widget in [doc_frame, doc_label, dl_icon]:
                         widget.bind('<Enter>', on_enter)
                         widget.bind('<Leave>', on_leave)
-                    
+
                     dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
-                    
+
                     label = doc_frame
  
                 if label:
@@ -857,7 +980,47 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         f"Error: {str(e)}\n\n"
                         f"Try opening manually: {file_path}"
                     )
+            
+            def detect_media_deletion():
+                """Periodically check if embedded media widgets still exist in Text widget"""
+                if not self.current_editor or not self.current_node_id:
+                    return
 
+                text = self.current_editor.text_area
+                current_windows = set(text.window_names())  # all current embedded windows
+
+                # Get all media IDs currently in DB for this node
+                from backend.database import get_media_for_node
+                media_list = get_media_for_node(self.current_node_id)
+                db_media_ids = {m['id'] for m in media_list}
+
+                # Check which widgets still exist
+                existing_widget_ids = set()
+                for win_name in current_windows:
+                    try:
+                        widget = text.nametowidget(win_name)
+                        if hasattr(widget, 'media_id'):
+                            existing_widget_ids.add(widget.media_id)
+                    except:
+                        pass
+
+                # Find deleted media (in DB but not in widget anymore)
+                deleted_ids = db_media_ids - existing_widget_ids
+
+                if deleted_ids:
+                    print(f"[Media Delete] Detected removal of IDs: {deleted_ids}")
+                    from backend.database import _db_instance
+                    conn = _db_instance._connect()
+                    try:
+                        for mid in deleted_ids:
+                            conn.execute("DELETE FROM media WHERE id=?", (mid,))
+                        conn.commit()
+                        print(f"[Media Delete] Removed {len(deleted_ids)} entries from DB")
+                    finally:
+                        conn.close()
+
+                # Re-check after 2 seconds
+                self.current_editor_frame.after(2000, detect_media_deletion)
     
             def download_file(file_path):
                 """Let user choose where to save a copy of the media file"""
@@ -886,6 +1049,9 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             # Bind auto-save
             text.bind('<KeyRelease>', lambda e: self.schedule_save())
             text.bind('<FocusOut>', lambda e: self.save_current_page())
+            self.current_editor_frame.after(1000, detect_media_deletion)
+
+            
 
 
  #       def restore_text_content(self, text_widget, content):
@@ -915,21 +1081,41 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             self._save_timer = self.root.after(1000, self.save_current_page)  # 1 sec delay
 
         def save_current_page(self):
-            """Save current page content to database"""
+            """Save current page content — only if it's a subpage (text editor)"""
             if not self.current_editor or not self.current_node_id:
                 return
-            
-            text = self.current_editor.text_area
-            content = text.get("1.0", "end-1c")
-            
-            tags = {}
-            for tag_name in ['bold', 'italic', 'underline', 'highlight', 'code']:
-                ranges = text.tag_ranges(tag_name)
-                if ranges:
-                    tags[tag_name] = [[str(ranges[i]), str(ranges[i+1])] for i in range(0, len(ranges), 2)]
-            
-            dump_data = {'content': content, 'tags': tags}
-            save_subpage(self.current_node_id, dump_data)
+    
+            # Only save text content if it's a subpage editor
+            if hasattr(self.current_editor, 'text_area'):
+                text = self.current_editor.text_area
+                content = text.get("1.0", "end-1c")
+                
+                tags = {}
+                for tag_name in ['bold', 'italic', 'underline', 'highlight', 'code']:
+                    ranges = text.tag_ranges(tag_name)
+                    if ranges:
+                        tags[tag_name] = [[str(ranges[i]), str(ranges[i+1])] for i in range(0, len(ranges), 2)]
+                
+                dump_data = {'content': content, 'tags': tags}
+                save_subpage(self.current_node_id, dump_data)
+                
+                # Update media positions (only for text editor)
+                for window_name in text.window_names():
+                    try:
+                        widget = text.nametowidget(window_name)
+                        if hasattr(widget, 'media_id'):
+                            pos = text.index(window_name)
+                            from backend.database import update_media_position
+                            update_media_position(widget.media_id, pos)
+                    except Exception as e:
+                        print(f"Failed to update media pos: {e}")
+            else:
+                # If it's a flowchart → call its save method instead
+                if hasattr(self.current_editor, 'save_flowchart'):
+                    self.current_editor.save_flowchart(self.current_node_id)
+                # Optional: add else for future types
+
+
             
             # Update media positions
             for window_name in text.window_names():

@@ -84,6 +84,8 @@ class EditableLabel:
     def get_text(self):
         """Get current text"""
         return self.text
+    
+
 
 class ProjectCard:
     """Draggable project card with editable content"""
