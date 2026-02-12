@@ -478,7 +478,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
                 file_path = filedialog.askopenfilename(
                     title=f"Insert {media_type.capitalize()}",
-                    filetypes=filetypes + [("All files", "*.*")]
+                    filetypes=filetypes + [("All files", "*.*"),],
+                    parent= self.root
                 )
 
                 if not file_path or not os.path.exists(file_path):
@@ -531,26 +532,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         bg_label = tk.Label(thumb_frame, text="Video", bg='#222', fg='#888')
                         bg_label.place(relx=0.5, rely=0.5, anchor='center')
 
-                    # Big centered play icon (semi-transparent)
-                    try:
-                        play_img_path = "./data/play-button.png"  # your PNG path
-                        play_img = Image.open(play_img_path).convert("RGBA")
-                        play_img.thumbnail((30, 30))  # small size
 
-                        play_overlay = tk.Label(
-                            thumb_frame,
-                            image=play_img,
-                            bd=0,
-                            highlightthickness=0,
-                            # NO bg= → fully transparent except circle pixels
-                        )
-                        play_overlay.image = play_img
-                        play_overlay.place(relx=0.5, rely=0.5, anchor='center')
-
-                    except Exception as e:
-                        print(f"[Play PNG circular failed] {e}")
-                        # Fallback small text circle icon
-                        tk.Label(thumb_frame, text="▶", font=('Segoe UI', 48), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
+                    tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
                     # Click to play (whole frame)
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
 
@@ -772,25 +755,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
                     # Centered semi-transparent play icon overlay
                     # Transparent PNG play button overlay
-                    try:
-                        play_img_path = "data/play-button.png"  # your PNG path
-                        play_img = Image.open(play_img_path).convert("RGBA")
-                        play_img.thumbnail((30, 30))  # small size
 
-                        play_overlay = tk.Label(
-                            thumb_frame,
-                            image=play_img,
-                            bd=0,
-                            highlightthickness=0,
-                            # NO bg= → fully transparent except circle pixels
-                        )
-                        play_overlay.image = play_img
-                        play_overlay.place(relx=0.5, rely=0.5, anchor='center')
-
-                    except Exception as e:
-                        print(f"[Play PNG circular failed] {e}")
-                        # Fallback small text circle icon
-                        tk.Label(thumb_frame, text="▶", font=('Segoe UI', 48), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
+                    tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
                     # Click to play (whole frame)
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
 
