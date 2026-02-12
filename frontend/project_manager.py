@@ -18,6 +18,10 @@ from flowchart import FlowchartEditor
 from PIL import Image, ImageTk ,ImageDraw
 import fitz
 
+# ===== NEW IMPORTS FOR FORMATTING =====
+from codeblockhandler_updated import CodeBlockHandler
+from text_formatter import TextFormatter
+
 
 def create_project_manager(parent, project_data=None, parent_card=None):
     """
@@ -342,43 +346,20 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             self.current_node_id = node_id
         
             text = editor.text_area
-            text.tag_configure('bold', font=('bold',))  # this adds bold to existing font
+            
+            # ===== NEW: Create formatter for text formatting =====
+            formatter = TextFormatter(text)
+            
+            # ===== NEW: Bind formatting shortcuts with formatter =====
+            text.bind('<Control-b>', lambda e: (formatter.toggle_bold(), 'break'))
+            text.bind('<Control-i>', lambda e: (formatter.toggle_italic(), 'break'))
+            text.bind('<Control-u>', lambda e: (formatter.toggle_underline(), 'break'))
+            text.bind('<Control-Shift-h>', lambda e: (formatter.toggle_highlight(), 'break'))
 
-            # Italic: add slant
-            text.tag_configure('italic', font=('italic',))
 
-            # Underline: just underline (no font change)
-            text.tag_configure('underline', underline=True)
-
-            # Highlight & code stay as-is
-            text.tag_configure('highlight', background='#ffff99', foreground='#000000')
-            text.tag_configure('code', font='Courier -12', background='#1a3a1a', foreground='#88ff88',
-                               lmargin1=10, lmargin2=10, rmargin=10)
-   
-            def toggle_tag(event=None, tag=None):
-                try:
-                    sel_start = text.index(tk.SEL_FIRST)
-                    sel_end = text.index(tk.SEL_LAST)
-                    if sel_start and sel_end:
-                        current_tags = text.tag_names(sel_start)
-                        if tag in current_tags:
-                            text.tag_remove(tag, sel_start, sel_end)
-                        else:
-                            text.tag_add(tag, sel_start, sel_end)
-                    return 'break'
-                except tk.TclError:
-                    return 'break'
-        
-            text.bind('<Control-b>', lambda e: toggle_tag(e, 'bold'))
-            text.bind('<Control-i>', lambda e: toggle_tag(e, 'italic'))
-            text.bind('<Control-u>', lambda e: toggle_tag(e, 'underline'))
-            text.bind('<Control-Shift-h>', lambda e: toggle_tag(e, 'highlight'))
-            text.bind('<Control-Shift-c>', lambda e: toggle_tag(e, 'code'))
-        
-            # Toolbar code here (your existing toolbar)
-        
             # Load content
             dump = load_subpage(node_id)
+            tags_data = {}
             if dump:
                 text.delete("1.0", "end")
                 
@@ -395,14 +376,17 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 text.insert("1.0", content)
     
                 # Apply tags if present
-            for tag_name, ranges_list in dump.get('tags', {}).items():
+            for tag_name, ranges_list in tags_data.items():
                 # Configure font/size tags on load if needed
                 if tag_name.startswith('font_'):
                     family = tag_name.replace('font_', '').replace('_', ' ')
                     text.tag_configure(tag_name, font=(family, text.cget('font').split()[1]))
                 elif tag_name.startswith('size_'):
-                    size = int(tag_name.replace('size_', ''))
-                    text.tag_configure(tag_name, font=(text.cget('font').split()[0], f'-{size}'))
+                    try:
+                        size = int(tag_name.replace('size_', ''))
+                        text.tag_configure(tag_name, font=(text.cget('font').split()[0], f'-{size}'))
+                    except tk.TclError:
+                            pass
 
                 # Apply ranges
                 for start_end in ranges_list:
@@ -504,24 +488,43 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         bg_label.place(relx=0.5, rely=0.5, anchor='center')
 
                     # Big centered play icon (semi-transparent)
-                    play_icon = tk.Label(thumb_frame, text="▶", font=('Segoe UI', 60, 'bold'),
-                                         fg='#ffffff', bg=thumb_frame.cget('bg'))  # transparent bg
-                    play_icon.place(relx=0.5, rely=0.5, anchor='center')
+                    try:
+                        play_img_path = "./data/play-button.png"  # your PNG path
+                        play_img = Image.open(play_img_path).convert("RGBA")
+                        play_img.thumbnail((30, 30))  # small size
+
+                        play_overlay = tk.Label(
+                            thumb_frame,
+                            image=play_img,
+                            bd=0,
+                            highlightthickness=0,
+                            # NO bg= → fully transparent except circle pixels
+                        )
+                        play_overlay.image = play_img
+                        play_overlay.place(relx=0.5, rely=0.5, anchor='center')
+
+                    except Exception as e:
+                        print(f"[Play PNG circular failed] {e}")
+                        # Fallback small text circle icon
+                        tk.Label(thumb_frame, text="▶", font=('Segoe UI', 48), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
+                    # Click to play (whole frame)
+                    thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+
+
 
                     # Hover effect: slight scale + opacity
-                    def on_enter(e):
-                        play_icon.config(fg='#00ff99', font=('Segoe UI', 74, 'bold'))
-                    def on_leave(e):
-                        play_icon.config(fg='#ffffff', font=('Segoe UI', 68, 'bold'))
-
-                    thumb_frame.bind('<Enter>', on_enter)
-                    thumb_frame.bind('<Leave>', on_leave)
-                    play_icon.bind('<Enter>', on_enter)
-                    play_icon.bind('<Leave>', on_leave)
+                   # def on_enter(e):
+                   #     play_overlay.config(fg='#00ff99', font=('Segoe UI', 74, 'bold'))
+                   # def on_leave(e):
+                   #     play_icon.config(fg='#ffffff', font=('Segoe UI', 68, 'bold'))
+#
+                   # thumb_frame.bind('<Enter>', on_enter)
+                   # thumb_frame.bind('<Leave>', on_leave)
+                   # play_icon.bind('<Enter>', on_enter)
+                   # play_icon.bind('<Leave>', on_leave)
 
                     # Click to play
-                    thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
-                    play_icon.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+
 
                     # Right-click download menu
                     menu = tk.Menu(thumb_frame, tearoff=0, bg='#222', fg='#ddd', bd=0)
@@ -536,53 +539,67 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     
                     # Try to generate real thumbnail for PDF
                     img_tk = None
-                    preview_text = original_filename[:20] + "..." if len(original_filename) > 20 else original_filename
-                    
-                    if media_type == 'pdf' and file_path.lower().endswith('.pdf'):
+                    is_pdf = file_path.lower().endswith('.pdf')
+                    if is_pdf:
+                        print("[PDF THUMB] File is PDF → attempting generation")
                         try:
+                            import fitz
+                            print("[PDF THUMB] fitz imported OK")
                             doc = fitz.open(file_path)
+                            print(f"[PDF THUMB] Opened document - {len(doc)} pages")
                             if len(doc) > 0:
                                 page = doc[0]
-                                zoom = 1.8  # higher for better quality thumbnail
+                                zoom = 2.0
                                 mat = fitz.Matrix(zoom, zoom)
                                 pix = page.get_pixmap(matrix=mat, alpha=False)
+                                print("[PDF THUMB] Pixmap generated")
                                 img_data = pix.tobytes("png")
                                 image = Image.open(io.BytesIO(img_data))
-                                image.thumbnail((220, 300))  # keep aspect, max width 220
+                                image.thumbnail((220, 320))
                                 img_tk = ImageTk.PhotoImage(image)
+                                print("[PDF THUMB] SUCCESS - thumbnail ready")
                             doc.close()
+                        except ImportError:
+                            print("[PDF THUMB] PyMuPDF missing - install: pip install pymupdf")
                         except Exception as e:
-                            print(f"[PDF thumb failed] {file_path}: {e}")
+                            print(f"[PDF THUMB] ERROR {file_path}: {type(e).__name__}: {str(e)}")
+                    else:
+                        print("[DOC THUMB] Non-PDF doc → using fallback")
                     
-                    # Create label with real thumbnail or fallback
-                    doc_label = tk.Label(
-                        doc_frame,
-                        image=img_tk,
-                        text=preview_text if not img_tk else "",  # hide text if thumbnail works
-                        compound='top' if not img_tk else 'none',
-                        bg='#1a1a2e', fg='#aaccff',
-                        wraplength=220,
-                        font=('Segoe UI', 9),
-                        justify='center'
-                    )
+                    # Label with thumbnail or fallback
                     if img_tk:
-                        doc_label.image = img_tk  # keep reference!
-                    doc_label.pack(pady=8, padx=8, expand=True, fill='both')
+                        doc_label = tk.Label(doc_frame, image=img_tk, bg='#1a1a2e')
+                        doc_label.image = img_tk  # MUST keep reference
+                        print("[DOC/PDF] Displaying real thumbnail")
+                    else:
+                        fallback_icon = "📄" if is_pdf else "📝"
+                        doc_label = tk.Label(
+                            doc_frame,
+                            text=f"{fallback_icon}\n{preview_text}",
+                            bg='#1a1a2e', fg='#aaccff',
+                            font=('Segoe UI', 18),
+                            wraplength=220,
+                            justify='center'
+                        )
+                        print("[DOC/PDF] Displaying fallback icon/text")
                     
-                    # Download icon (top-right, hover effect)
+                    doc_label.pack(pady=10, padx=10, expand=True, fill='both')
+                    
+                    # Download icon top-right with hover
                     dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
                                        fg='#88ff88', bg='#1a1a2e')
                     dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
-                    
-                    def on_enter(e):
-                        dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
-                    def on_leave(e):
-                        dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
 
-                    doc_frame.bind('<Enter>', on_enter)
-                    doc_frame.bind('<Leave>', on_leave)
-                    dl_icon.bind('<Enter>', on_enter)
-                    dl_icon.bind('<Leave>', on_leave)
+                    
+                    #def on_enter(e):
+                    #    dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
+                    #def on_leave(e):
+                    #    dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
+
+                    #doc_frame.bind('<Enter>', on_enter)
+                    #doc_frame.bind('<Leave>', on_leave)
+                    #dl_icon.bind('<Enter>', on_enter)
+                    #dl_icon.bind('<Leave>', on_leave)
 
                     # Click icon to download
                     dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
@@ -618,7 +635,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             
             font_menu.pack(side='left', padx=4)
             # Font size selector
-            sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48]
+            sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48 , 52 , 64 , 72 , 80 , 96]
             size_var = tk.StringVar(value='12')
 
             size_menu = tk.OptionMenu(toolbar, size_var, *sizes,
@@ -635,37 +652,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             size_menu.pack(side='left', padx=4)
 
             def apply_font_family(family):
-                try:
-                    sel_start = text.index(tk.SEL_FIRST)
-                    sel_end = text.index(tk.SEL_LAST)
-                except tk.TclError:
-                    # No selection → apply to current insertion point
-                    sel_start = sel_end = text.index(tk.INSERT)
-
-                current_tags = text.tag_names(sel_start)
-                for tag in current_tags:
-                    if tag.startswith('font_'):
-                        text.tag_remove(tag, sel_start, sel_end)
-
-                tag_name = f"font_{family.replace(' ', '_')}"
-                text.tag_configure(tag_name, font=(family, text.cget('font').split()[1]))
-                text.tag_add(tag_name, sel_start, sel_end)
+                """Apply font family using formatter (FIXED)"""
+                formatter.apply_font_family(family)
 
             def apply_font_size(size):
-                try:
-                    sel_start = text.index(tk.SEL_FIRST)
-                    sel_end = text.index(tk.SEL_LAST)
-                except tk.TclError:
-                    sel_start = sel_end = text.index(tk.INSERT)
-
-                current_tags = text.tag_names(sel_start)
-                for tag in current_tags:
-                    if tag.startswith('size_'):
-                        text.tag_remove(tag, sel_start, sel_end)
-
-                tag_name = f"size_{size}"
-                text.tag_configure(tag_name, font=(text.cget('font').split()[0], f'-{size}'))
-                text.tag_add(tag_name, sel_start, sel_end)
+                """Apply font size using formatter (FIXED)"""
+                formatter.apply_font_size(size)
 
             
             # Reload media safely
@@ -741,46 +733,20 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         play_img = Image.open(play_img_path).convert("RGBA")
                         play_img.thumbnail((30, 30))  # small size
 
-                        # Create circular mask
-                        size = play_img.size
-                        mask = Image.new("L", size, 0)
-                        draw = ImageDraw.Draw(mask)
-                        draw.ellipse((0, 0) + size, fill=255)  # perfect circle
-
-                        # Apply mask → corners transparent
-                        circular_play = Image.new("RGBA", size, (0, 0, 0, 0))
-                        circular_play.paste(play_img, (0, 0), mask)
-
-                        play_photo = ImageTk.PhotoImage(circular_play)
-
                         play_overlay = tk.Label(
                             thumb_frame,
-                            image=play_photo,
+                            image=play_img,
                             bd=0,
                             highlightthickness=0,
                             # NO bg= → fully transparent except circle pixels
                         )
-                        play_overlay.image = play_photo
+                        play_overlay.image = play_img
                         play_overlay.place(relx=0.5, rely=0.5, anchor='center')
-
-                        # Hover: cursor + optional glow
-                        def on_enter(e):
-                            play_overlay.config(cursor='hand2')
-                            # Optional: slight scale or border glow
-                            play_overlay.config(highlightbackground='#00ff88', highlightthickness=2)
-
-                        def on_leave(e):
-                            play_overlay.config(cursor='')
-                            play_overlay.config(highlightthickness=0)
-
-                        for w in [thumb_frame, play_overlay]:
-                            w.bind('<Enter>', on_enter)
-                            w.bind('<Leave>', on_leave)
 
                     except Exception as e:
                         print(f"[Play PNG circular failed] {e}")
                         # Fallback small text circle icon
-                        tk.Label(thumb_frame, text="▶", font=('Segoe UI', 48), fg='#ffffffcc', bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
+                        tk.Label(thumb_frame, text="▶", font=('Segoe UI', 48), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
                     # Click to play (whole frame)
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
 
@@ -790,21 +756,21 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     thumb_frame.bind("<Button-3>", lambda e: menu.post(e.x_root, e.y_root))
 
                     # Hover effect — bind directly to thumb_frame & play_overlay
-                    def on_enter(e):
-                        play_overlay.config(cursor='hand2')
-                        # Optional glow
-                        play_overlay.config(highlightbackground='#00ff88', highlightthickness=2)
-                        print("Hover enter on", media_type, media_id)
+                   # def on_enter(e):
+                   #     play_overlay.config(cursor='hand2')
+                   #     # Optional glow
+                   #     play_overlay.config(highlightbackground='#00ff88', highlightthickness=2)
+                   #     print("Hover enter on", media_type, media_id)
 
-                    def on_leave(e):
-                        play_overlay.config(cursor='')
-                        play_overlay.config(highlightthickness=0)
+                   # def on_leave(e):
+                   #     play_overlay.config(cursor='')
+                   #     play_overlay.config(highlightthickness=0)
 
-                    # Bind to both frame and overlay (covers all cases)
-                    thumb_frame.bind('<Enter>', on_enter)
-                    thumb_frame.bind('<Leave>', on_leave)
-                    play_overlay.bind('<Enter>', on_enter)
-                    play_overlay.bind('<Leave>', on_leave)
+                   # # Bind to both frame and overlay (covers all cases)
+                   # thumb_frame.bind('<Enter>', on_enter)
+                   # thumb_frame.bind('<Leave>', on_leave)
+                   # play_overlay.bind('<Enter>', on_enter)
+                   # play_overlay.bind('<Leave>', on_leave)
 
                     label = thumb_frame
 
@@ -867,20 +833,6 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
                                        fg='#88ff88', bg='#1a1a2e')
                     dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
-
-                    def on_enter(e):
-                        dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
-                        dl_icon.config(cursor='hand2')
-                        print("Hover enter on", media_type, media_id)
-
-                    def on_leave(e):
-                        dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
-                        dl_icon.config(cursor='')
-
-                    # Bind to ALL parts of the doc frame so hover works everywhere
-                    for widget in [doc_frame, doc_label, dl_icon]:
-                        widget.bind('<Enter>', on_enter)
-                        widget.bind('<Leave>', on_leave)
 
                     dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
 
@@ -980,47 +932,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         f"Error: {str(e)}\n\n"
                         f"Try opening manually: {file_path}"
                     )
-            
-            def detect_media_deletion():
-                """Periodically check if embedded media widgets still exist in Text widget"""
-                if not self.current_editor or not self.current_node_id:
-                    return
 
-                text = self.current_editor.text_area
-                current_windows = set(text.window_names())  # all current embedded windows
 
-                # Get all media IDs currently in DB for this node
-                from backend.database import get_media_for_node
-                media_list = get_media_for_node(self.current_node_id)
-                db_media_ids = {m['id'] for m in media_list}
-
-                # Check which widgets still exist
-                existing_widget_ids = set()
-                for win_name in current_windows:
-                    try:
-                        widget = text.nametowidget(win_name)
-                        if hasattr(widget, 'media_id'):
-                            existing_widget_ids.add(widget.media_id)
-                    except:
-                        pass
-
-                # Find deleted media (in DB but not in widget anymore)
-                deleted_ids = db_media_ids - existing_widget_ids
-
-                if deleted_ids:
-                    print(f"[Media Delete] Detected removal of IDs: {deleted_ids}")
-                    from backend.database import _db_instance
-                    conn = _db_instance._connect()
-                    try:
-                        for mid in deleted_ids:
-                            conn.execute("DELETE FROM media WHERE id=?", (mid,))
-                        conn.commit()
-                        print(f"[Media Delete] Removed {len(deleted_ids)} entries from DB")
-                    finally:
-                        conn.close()
-
-                # Re-check after 2 seconds
-                self.current_editor_frame.after(2000, detect_media_deletion)
     
             def download_file(file_path):
                 """Let user choose where to save a copy of the media file"""
@@ -1045,11 +958,76 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         print(f"File saved to: {dest_path}")
                     except Exception as e:
                         print(f"Download failed: {e}")
-        
-            # Bind auto-save
-            text.bind('<KeyRelease>', lambda e: self.schedule_save())
+
+
+            # ───────────────────────────────────────────────
+            # Code block handler with theme support (UPDATED)
+            # ───────────────────────────────────────────────
+            code_handler = CodeBlockHandler(text, theme='github_dark')
+            # Available themes: github_dark, monokai, dracula, nord, solarized, 
+            #                   one_dark, material, tomorrow, light
+            
+            def on_key_release(event=None):
+                """Handle both code block styling and auto-save"""
+                code_handler.apply_code_block_styling(event)
+                self.schedule_save()
+            
+            # Single binding for both code blocks and auto-save
+            text.bind('<KeyRelease>', on_key_release)
+            
+            # Initial check after loading
+            text.after(100, code_handler.apply_code_block_styling)
+            
+            # Separate binding for focus out
             text.bind('<FocusOut>', lambda e: self.save_current_page())
-            self.current_editor_frame.after(1000, detect_media_deletion)
+
+            def detect_media_deletion(round=1):
+                """Check for deleted media - retry once after delay"""
+                if not self.current_editor or not self.current_node_id:
+                    return
+
+                text = self.current_editor.text_area
+                
+                current_windows = text.window_names()
+                existing_widget_ids = set()
+
+                for win_name in current_windows:
+                    try:
+                        widget = text.nametowidget(win_name)
+                        if hasattr(widget, 'media_id'):
+                            existing_widget_ids.add(widget.media_id)
+                            print(f"[Media Check] Round {round} - Alive widget ID: {widget.media_id}")
+                    except tk.TclError:
+                        pass
+
+                from backend.database import get_media_for_node
+                media_list = get_media_for_node(self.current_node_id)
+                db_media_ids = {m['id'] for m in media_list if m.get('id') is not None}
+
+                deleted_ids = db_media_ids - existing_widget_ids
+
+                if deleted_ids:
+                    print(f"[Media Delete] DETECTED in round {round}: {deleted_ids}")
+                    from backend.database import _db_instance
+                    conn = _db_instance._connect()
+                    try:
+                        for mid in deleted_ids:
+                            conn.execute("DELETE FROM media WHERE id=?", (mid,))
+                        conn.commit()
+                        print(f"[Media Delete] Removed {len(deleted_ids)} entries")
+                    finally:
+                        conn.close()
+                else:
+                    print(f"[Media Check] Round {round} - No deletions (alive: {len(current_windows)}, DB: {len(db_media_ids)})")
+
+                # Retry once after 1 second if first round found nothing
+                if round == 1:
+                    text.after(1000, lambda: detect_media_deletion(round=2))
+                else:
+                    # Next normal check after 3 seconds
+                    text.after(3000, lambda: detect_media_deletion(round=1))
+
+            text.after(1500, lambda: detect_media_deletion(round=1))  # Start first check after 2 seconds
 
             
 
@@ -1091,10 +1069,20 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 content = text.get("1.0", "end-1c")
                 
                 tags = {}
-                for tag_name in ['bold', 'italic', 'underline', 'highlight', 'code']:
+                for tag_name in ['bold', 'italic', 'underline', 'highlight', 'code_block']:
                     ranges = text.tag_ranges(tag_name)
                     if ranges:
                         tags[tag_name] = [[str(ranges[i]), str(ranges[i+1])] for i in range(0, len(ranges), 2)]
+
+                # Save dynamic font_ and size_ tags
+                all_tags = text.tag_names()
+                for tag_name in all_tags:
+                    if tag_name.startswith('font_') or tag_name.startswith('size_'):
+                        ranges = text.tag_ranges(tag_name)
+                        if ranges:
+                            if tag_name not in tags:
+                                tags[tag_name] = []
+                            tags[tag_name].extend([[str(ranges[i]), str(ranges[i+1])] for i in range(0, len(ranges), 2)])
                 
                 dump_data = {'content': content, 'tags': tags}
                 save_subpage(self.current_node_id, dump_data)
