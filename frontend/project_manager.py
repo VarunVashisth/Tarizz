@@ -19,7 +19,6 @@ from flowchart import FlowchartEditor
 from PIL import Image, ImageTk ,ImageDraw
 import fitz
 
-# ===== NEW IMPORTS FOR FORMATTING =====
 from codeblockhandler_updated import CodeBlockHandler
 from text_formatter import TextFormatter
 
@@ -388,11 +387,9 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             self.current_node_id = node_id
         
             text = editor.text_area
-            
-            # ===== NEW: Create formatter for text formatting =====
+      
             formatter = TextFormatter(text)
             
-            # ===== NEW: Bind formatting shortcuts with formatter =====
             text.bind('<Control-b>', lambda e: (formatter.toggle_bold(), 'break'))
             text.bind('<Control-i>', lambda e: (formatter.toggle_italic(), 'break'))
             text.bind('<Control-u>', lambda e: (formatter.toggle_underline(), 'break'))
@@ -455,9 +452,6 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 except:
                     return (0, 0)
                 
-                        # ───────────────────────────────────────────────
-            #   Toolbar — only for inserting NEW media
-            # ───────────────────────────────────────────────
             toolbar = tk.Frame(frame, bg='#181818', height=38)
             toolbar.pack(side='top', fill='x', pady=(0, 6))
             toolbar.pack_propagate(False)
@@ -543,19 +537,6 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
 
 
-                    # Hover effect: slight scale + opacity
-                   # def on_enter(e):
-                   #     play_overlay.config(fg='#00ff99', font=('Segoe UI', 74, 'bold'))
-                   # def on_leave(e):
-                   #     play_icon.config(fg='#ffffff', font=('Segoe UI', 68, 'bold'))
-#
-                   # thumb_frame.bind('<Enter>', on_enter)
-                   # thumb_frame.bind('<Leave>', on_leave)
-                   # play_icon.bind('<Enter>', on_enter)
-                   # play_icon.bind('<Leave>', on_leave)
-
-                    # Click to play
-
 
                     # Right-click download menu
                     menu = tk.Menu(thumb_frame, tearoff=0, bg='#222', fg='#ddd', bd=0)
@@ -622,17 +603,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
 
                     
-                    #def on_enter(e):
-                    #    dl_icon.config(fg='#00ff88', font=('Segoe UI', 18, 'bold'))
-                    #def on_leave(e):
-                    #    dl_icon.config(fg='#88ff88', font=('Segoe UI', 16, 'bold'))
-
-                    #doc_frame.bind('<Enter>', on_enter)
-                    #doc_frame.bind('<Leave>', on_leave)
-                    #dl_icon.bind('<Enter>', on_enter)
-                    #dl_icon.bind('<Leave>', on_leave)
-
-                    # Click icon to download
+    
                     dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
 
                     label = doc_frame
@@ -757,8 +728,6 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         bg_label.image = bg_photo
                     bg_label.place(relx=0.5, rely=0.5, anchor='center')
 
-                    # Centered semi-transparent play icon overlay
-                    # Transparent PNG play button overlay
 
                     tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
                     # Click to play (whole frame)
@@ -781,22 +750,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     for child in thumb_frame.winfo_children():
                         child.bind('<Button-1>', on_thumb_click)
 
-                    # Hover effect — bind directly to thumb_frame & play_overlay
-                   # def on_enter(e):
-                   #     play_overlay.config(cursor='hand2')
-                   #     # Optional glow
-                   #     play_overlay.config(highlightbackground='#00ff88', highlightthickness=2)
-                   #     print("Hover enter on", media_type, media_id)
 
-                   # def on_leave(e):
-                   #     play_overlay.config(cursor='')
-                   #     play_overlay.config(highlightthickness=0)
-
-                   # # Bind to both frame and overlay (covers all cases)
-                   # thumb_frame.bind('<Enter>', on_enter)
-                   # thumb_frame.bind('<Leave>', on_leave)
-                   # play_overlay.bind('<Enter>', on_enter)
-                   # play_overlay.bind('<Leave>', on_leave)
 
                     label = thumb_frame
 
@@ -875,9 +829,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 else:
                     print(f"[SKIP] No label created for media {media_id}")
 
-                    # ───────────────────────────────────────────────
-        #   Image resize helpers
-        # ───────────────────────────────────────────────
+
             def start_resize(event, label, original_image):
                 """Begin resizing image when mouse pressed on it"""
                 label._resize_start_x = event.x
@@ -906,10 +858,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     label.configure(width=new_width, height=new_height)
                 except Exception as e:
                     print(f"Resize failed: {e}")
-    
-            # ───────────────────────────────────────────────
-            #   Media action helpers
-            # ───────────────────────────────────────────────
+
             def play_video(file_path , parent=None):
                 """Reliable cross-platform video playback using system default"""
                 
@@ -969,9 +918,6 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         print(f"Download failed: {e}")
 
 
-            # ───────────────────────────────────────────────
-            # Code block handler with theme support (UPDATED)
-            # ───────────────────────────────────────────────
             code_handler = CodeBlockHandler(text, theme='github_dark')
             # Available themes: github_dark, monokai, dracula, nord, solarized, 
             #                   one_dark, material, tomorrow, light
@@ -1039,28 +985,6 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             text.after(1500, lambda: detect_media_deletion(round=1))  # Start first check after 2 seconds
 
             
-
-
- #       def restore_text_content(self, text_widget, content):
- #           """Restore text widget from content"""
- #           text_widget.delete('1.0', 'end')
- #           
- #           for item in content:
- #               if not isinstance(item, (list, tuple)) or len(item) < 2:
- #                   continue
- #               
- #               cmd = item[0]
- #               
- #               if cmd == 'text' and len(item) >= 3:
- #                   text_widget.insert(item[1], item[2])
- #               elif cmd == 'tagon' and len(item) >= 3:
- #                   text_widget.tag_add(item[2], item[1])
- #               elif cmd == 'tagoff' and len(item) >= 3:
- #                   text_widget.tag_remove(item[2], item[1])
- #               elif cmd == 'mark' and len(item) >= 3:
- #                   text_widget.mark_set(item[2], item[1])
-                # window/image restoration can be added here
-
         def schedule_save(self):
             """Debounced auto-save"""
             if hasattr(self, '_save_timer'):

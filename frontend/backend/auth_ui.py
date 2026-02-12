@@ -1,28 +1,4 @@
-"""
-auth_ui.py – Tarizz Authentication Window
-============================================
-Responsibility : Provide the Tkinter UI for password creation (first run)
-                 and login (subsequent runs).  This window is shown BEFORE
-                 the main ProjectDashboard and blocks until the user
-                 successfully authenticates or closes the app.
 
-Why a separate file?
---------------------
-  • The auth window has a completely different layout from the dashboard.
-  • It must be destroyed before the dashboard is created (Tkinter root
-    rules).
-  • Keeping it isolated means we can swap it for a different UI toolkit
-    later without touching dashboard code.
-
-Design decisions
-----------------
-  • Uses a single Tk() root that is destroyed on success – the bootstrap
-    layer then creates the real Tk() root for the dashboard.
-  • Password fields use show='•' to hide input.
-  • Strength feedback updates live as the user types.
-  • Lockout countdown updates every 1 second via .after().
-  • No network, no file I/O except what AuthManager does internally.
-"""
 
 import os
 import sys
@@ -31,32 +7,14 @@ from tkinter import PhotoImage, messagebox
 
 
 def run_auth_gate(auth_manager , create_mode = False) -> bool:
-    """
-    Block until the user authenticates or closes the window.
 
-    Inputs
-      auth_manager – the AuthManager instance (already constructed,
-                     NOT yet logged in).
-    Output
-      True  – user authenticated; session_key is now set.
-      False – user closed the window without authenticating.
-    Side-effects
-      • Creates and destroys a Tk() root window.
-      • Calls auth_manager.create_password() or auth_manager.login().
-    """
     gate = _AuthWindow(auth_manager , create_mode=create_mode)
     gate.root.mainloop()
     return gate.authenticated
 
 
 class _AuthWindow:
-    """
-    Internal class.  Not imported anywhere outside this module.
 
-    Attributes
-      root          – the Tk() root window.
-      authenticated – set to True only on successful login/create.
-    """
 
     def __init__(self, auth_manager , create_mode=False):
         self.auth_manager  = auth_manager
@@ -92,9 +50,6 @@ class _AuthWindow:
         # --- layout ---
         self._build_ui()
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
     def _build_ui(self):
         # Title
         tk.Label(
@@ -137,7 +92,7 @@ class _AuthWindow:
 
             self._make_button(card, "Create Vault", self._on_create)
 
-        # --- subsequent runs: login ---
+
         else:
             tk.Label(
                 card, text="Welcome Back",
@@ -192,9 +147,7 @@ class _AuthWindow:
             # Bind Enter key
             self.pwd_entry.bind("<Return>", lambda e: self._on_login())
 
-    # ------------------------------------------------------------------
-    # Helpers for building styled widgets
-    # ------------------------------------------------------------------
+
 
     def _switch_to_create_mode(self):
        self.root.destroy()
@@ -230,9 +183,7 @@ class _AuthWindow:
         btn.pack(fill="x", ipady=10, pady=(4, 0))
         return btn
 
-    # ------------------------------------------------------------------
-    # Callbacks
-    # ------------------------------------------------------------------
+
     def _on_pwd_keystroke(self, event=None):
         """Live strength feedback while typing (create-password mode)."""
         pwd = self.pwd_entry.get()

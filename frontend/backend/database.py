@@ -1,18 +1,3 @@
-"""
-database.py — Simplified Tarizz Database Layer
-===============================================
-A clean SQLite schema with parent-child relationships for the tree structure
-and encrypted content storage for all text/media.
-
-Schema Design:
---------------
-1. projects table — dashboard cards
-2. nodes table — tree hierarchy (folders, subpages, flowcharts)
-3. content table — encrypted text content with formatting dump
-4. media table — tracks media files with their encrypted paths
-
-Every piece of data is encrypted before storage.
-"""
 
 import sqlite3
 import json
@@ -154,9 +139,7 @@ class Database:
         finally:
             conn.close()
     
-    # ========================================================================
-    # PROJECTS (Dashboard Cards)
-    # ========================================================================
+
     
     def create_project(self, title: str, description: str, card_order: int) -> int:
         """Create a new project card"""
@@ -207,20 +190,11 @@ class Database:
         finally:
             conn.close()
     
-    # ========================================================================
-    # NODES (Tree Structure)
-    # ========================================================================
+ 
     
     def create_node(self, project_id: int, parent_id: Optional[int], 
                    node_type: str, name: str) -> int:
-        """
-        Create a node in the tree.
-        
-        Rules enforced:
-        - Folders can contain folders or subpages or flowcharts
-        - Subpages CANNOT contain anything (leaf nodes)
-        - Flowcharts CANNOT contain anything (leaf nodes)
-        """
+
         import time
         
         # Validate parent isn't a subpage or flowchart
@@ -301,9 +275,7 @@ class Database:
         finally:
             conn.close()
     
-    # ========================================================================
-    # CONTENT (Encrypted Text Widget Dumps)
-    # ========================================================================
+
     
     def save_subpage(self, node_id: int, data_dump: Dict):
         """
@@ -359,9 +331,7 @@ class Database:
         finally:
             conn.close()
     
-    # ========================================================================
-    # MEDIA (Embedded Files)
-    # ========================================================================
+ 
     
     def save_media(self, node_id: int, media_type: str, file_path: str, 
                    original_filename: str, position_index: str) -> int:
@@ -442,9 +412,6 @@ class Database:
             Database._instance = None
 
 
-# ============================================================================
-# PUBLIC API (for project_manager.py to import)
-# ============================================================================
 
 
 def reset_database():
