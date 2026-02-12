@@ -1,5 +1,5 @@
 """
-auth_ui.py  —  Tarizz Authentication Window
+auth_ui.py – Tarizz Authentication Window
 ============================================
 Responsibility : Provide the Tkinter UI for password creation (first run)
                  and login (subsequent runs).  This window is shown BEFORE
@@ -16,35 +16,33 @@ Why a separate file?
 
 Design decisions
 ----------------
-  • Uses a single Tk() root that is destroyed on success — the bootstrap
+  • Uses a single Tk() root that is destroyed on success – the bootstrap
     layer then creates the real Tk() root for the dashboard.
   • Password fields use show='•' to hide input.
   • Strength feedback updates live as the user types.
   • Lockout countdown updates every 1 second via .after().
-  • No network, no file I/O except what SessionManager does internally.
+  • No network, no file I/O except what AuthManager does internally.
 """
 
 import tkinter as tk
 from tkinter import messagebox
 
-from .backup_folder.session_manager import SessionManager
 
-
-def run_auth_gate(session: SessionManager) -> bool:
+def run_auth_gate(auth_manager) -> bool:
     """
     Block until the user authenticates or closes the window.
 
     Inputs
-      session – the SessionManager instance (already constructed,
-                NOT yet logged in).
+      auth_manager – the AuthManager instance (already constructed,
+                     NOT yet logged in).
     Output
-      True  – user authenticated; session is active.
+      True  – user authenticated; session_key is now set.
       False – user closed the window without authenticating.
     Side-effects
       • Creates and destroys a Tk() root window.
-      • Calls session.create_password() or session.login().
+      • Calls auth_manager.create_password() or auth_manager.login().
     """
-    gate = _AuthWindow(session)
+    gate = _AuthWindow(auth_manager)
     gate.root.mainloop()
     return gate.authenticated
 
@@ -58,15 +56,15 @@ class _AuthWindow:
       authenticated – set to True only on successful login/create.
     """
 
-    def __init__(self, session: SessionManager):
-        self.session       = session
+    def __init__(self, auth_manager):
+        self.auth_manager  = auth_manager
         self.authenticated = False
 
         # --- root window ---
         self.root = tk.Tk()
-        self.root.title("Tarizz — Unlock Your Vault")
-        self.root.geometry("420x380")
-        self.root.resizable(False, False)
+        self.root.title("Tarizz – Unlock Your Vault")
+        self.root.geometry("420x500")
+  
         self.root.configure(bg="#1a1a1a")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -85,7 +83,7 @@ class _AuthWindow:
     def _build_ui(self):
         # Title
         tk.Label(
-            self.root, text="🔐 Tarizz",
+            self.root, text="🔒 Tarizz",
             font=("Segoe UI", 24, "bold"), fg="white", bg="#1a1a1a"
         ).pack(pady=(40, 4))
 
@@ -99,7 +97,7 @@ class _AuthWindow:
         card.pack(padx=40, pady=0, fill="x")
 
         # --- first run: create password ---
-        if self.session.is_first_run():
+        if self.auth_manager.is_first_run():
             tk.Label(
                 card, text="Create Master Password",
                 font=("Segoe UI", 13, "bold"), fg="white", bg="#2a2a2a"
@@ -182,7 +180,7 @@ class _AuthWindow:
     def _on_pwd_keystroke(self, event=None):
         """Live strength feedback while typing (create-password mode)."""
         pwd = self.pwd_entry.get()
-        ok, reason = self.session.auth.validate_password_strength(pwd)
+        ok, reason = self.auth_manager.validate_password_strength(pwd)
         if not pwd:
             self.strength_label.config(text="", fg="#888888")
         elif ok:
@@ -196,7 +194,7 @@ class _AuthWindow:
         confirm = self.confirm_entry.get()
 
         # Validation
-        ok, reason = self.session.auth.validate_password_strength(pwd)
+        ok, reason = self.auth_manager.validate_password_strength(pwd)
         if not ok:
             messagebox.showerror("Weak Password", reason, parent=self.root)
             return
@@ -206,14 +204,14 @@ class _AuthWindow:
             return
 
         # Create
-        self.session.create_password(pwd)
+        self.auth_manager.create_password(pwd)
         self.authenticated = True
         self.root.destroy()
 
     def _on_login(self):
         """Handle the 'Unlock' button."""
-        if self.session.is_locked():
-            secs = int(self.session.lockout_remaining())
+        if self.auth_manager.is_locked():
+            secs = int(self.auth_manager.lockout_remaining_seconds())
             self.status_label.config(
                 text=f"Locked. Try again in {secs}s."
             )
@@ -221,12 +219,12 @@ class _AuthWindow:
             return
 
         pwd = self.pwd_entry.get()
-        if self.session.login(pwd):
+        if self.auth_manager.login(pwd):
             self.authenticated = True
             self.root.destroy()
         else:
             self.pwd_entry.delete(0, tk.END)
-            if self.session.is_locked():
+            if self.auth_manager.is_locked():
                 self.status_label.config(text="Too many attempts. Locked for 60s.")
                 self._tick_lockout()
             else:
@@ -234,8 +232,8 @@ class _AuthWindow:
 
     def _tick_lockout(self):
         """Update the lockout countdown every second."""
-        if self.session.is_locked():
-            secs = int(self.session.lockout_remaining())
+        if self.auth_manager.is_locked():
+            secs = int(self.auth_manager.lockout_remaining_seconds())
             self.status_label.config(text=f"Locked. Try again in {secs}s.")
             self.root.after(1000, self._tick_lockout)
         else:

@@ -29,16 +29,36 @@ except ImportError:
     decrypt = lambda data, key: data
 
 _db_instance = None  # Singleton instance of Database
+_db_path = None
+
+def set_db_path(path: str):
+    """Set the database path for the current vault"""
+    global _db_path
+    _db_path = path
+
+def get_db_path() -> str:
+    """Get the current database path"""
+    global _db_path
+    if not _db_path:
+        raise RuntimeError("Database path not set. Please authenticate first.")
+    return _db_path
+    
+    
+    # Default fallback
+    import os
+    if os.name == 'nt':
+        default_dir = os.path.join(os.environ.get('APPDATA', '.'), 'Tarizz')
+    else:
+        default_dir = os.path.join(os.path.expanduser('~'), '.tarizz')
+    
+    os.makedirs(default_dir, exist_ok=True)
+    return os.path.join(default_dir, 'tarizz.db')
 
 def get_db():
     global _db_instance
     if _db_instance is None:
-        base_dir = os.path.expanduser("~/.tarizz")
-        os.makedirs(base_dir, exist_ok=True)
-        db_path = os.path.join(base_dir, "database.db")
+        db_path = get_db_path()
         _db_instance = Database(db_path)
-        _db_instance._session_key = hashlib.sha256(b'dummy-32-byte-key-for-testing-1234567').digest()  # For testing, use a fixed key
-        _db_instance._init_db()
     return _db_instance
 
 class Database:
@@ -67,6 +87,9 @@ class Database:
     
     def _init_db(self):
         """Create all tables if they don't exist"""
+
+
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         conn = self._connect()
         try:
             # Projects table - dashboard cards

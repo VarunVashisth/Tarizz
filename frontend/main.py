@@ -2,6 +2,13 @@ import tkinter as tk
 from tkinter import ttk
 import math
 from project_manager import create_project_manager  # <-- Import the function
+import os , sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from backend.auth_manager import AuthManager
+from backend.auth_ui import run_auth_gate
+
+
+
 
 class EditableLabel:
     """Custom editable label that switches to entry on click"""
@@ -347,9 +354,10 @@ class ProjectCard:
 class ProjectDashboard:
     """Main dashboard class"""
     
-    def __init__(self):
+    def __init__(self,auth_manager):
         self.root = tk.Tk()
         self.selected_card = None
+        self.auth_manager = auth_manager
         
         self.setup_window()
         self.create_sidebar()
@@ -636,8 +644,51 @@ class ProjectDashboard:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    #from backend.tarizz_bootstrap import bootstrap
-    #bootstrap()
-    app = ProjectDashboard()
+def main():
+    """
+    Main entry point with authentication flow.
+    
+    Flow:
+    1. Initialize AuthManager
+    2. Show authentication window
+    3. If authenticated, launch dashboard
+    4. Dashboard uses vault-specific database
+    """
+    # Determine data directory
+    # For development, use a local directory
+    # For production, use appropriate user data directory
+    if os.name == 'nt':  # Windows
+        data_dir = os.path.join(os.environ.get('APPDATA', '.'), 'Tarizz')
+    else:  # macOS/Linux
+        data_dir = os.path.join(os.path.expanduser('~'), '.tarizz')
+    
+    # Create data directory if it doesn't exist
+    os.makedirs(data_dir, exist_ok=True)
+    
+    print(f"Tarizz data directory: {data_dir}")
+    
+    # Initialize authentication manager
+    auth_manager = AuthManager(data_dir)
+    
+    # Show authentication window and wait for login
+    authenticated = run_auth_gate(auth_manager)
+    
+    if not authenticated:
+        print("Authentication cancelled")
+        return
+    
+    print(f"Authenticated successfully! Vault: {auth_manager.vault_id}")
+    print(f"Database path: {auth_manager.get_database_path()}")
+
+    from backend.database import set_db_path , Database
+    
+    set_db_path(auth_manager.get_database_path())
+    Database.set_session_key(auth_manager.get_session_key())
+
+    # Launch main dashboard with authenticated session
+    app = ProjectDashboard(auth_manager)
     app.run()
+
+
+if __name__ == "__main__":
+    main()
