@@ -1,57 +1,10 @@
-"""
-crypto_engine.py  —  Tarizz Security Layer
-==========================================
-Responsibility : Every encrypt / decrypt / key-derive operation in Tarizz
-                 lives here.  No other module touches raw cryptographic
-                 primitives directly.
-
-Why this module exists
-----------------------
-Centralising crypto means:
-  • One place to audit for correctness.
-  • One place to swap algorithms if a vulnerability is found.
-  • Zero chance of a copy-paste bug creating a second, weaker path.
-
-Algorithm choices — rationale
------------------------------
-Key derivation  →  scrypt
-  • Memory-hard: an attacker with only GPU cores (no huge RAM) pays a heavy
-    penalty.  Argon2 is newer but ships with no stdlib support on Windows;
-    scrypt is in hashlib since Python 3.6 and is the default recommendation
-    for *offline* desktop apps where the user types the password once.
-  • Parameters (n=2^17, r=8, p=1) give ~100 ms on modern hardware — fast
-    enough for a single login, slow enough to make brute-force impractical.
-
-Encryption  →  AES-256-GCM
-  • Authenticated encryption: ciphertext is tampered-proof.  If even one bit
-    flips the tag check fails and decryption raises, so corrupted or
-    maliciously edited files are detected before any plaintext is produced.
-  • 256-bit key  →  128 bits of security (meet-in-the-middle bound).
-  • GCM nonce is 96 bits (12 bytes) — the NIST-recommended size.
-  • Each encryption call generates a fresh random nonce; reuse is impossible.
-
-Disk layout for one encrypted blob
------------------------------------
-  [ salt: 16 bytes ][ nonce: 12 bytes ][ ciphertext + GCM tag: variable ]
-  
-  The GCM tag (16 bytes) is appended to the ciphertext by the library
-  automatically when we call .finalize_with_tag() / .encrypt().
-
-Microsoft-Store compatibility
------------------------------
-  • Uses only hashlib (stdlib) + cryptography (pure-Python fallback exists,
-    but the C extension is fine for MSIX — no kernel drivers, no COM).
-  • No files outside the app's own storage directory are touched.
-"""
 
 import os
 import hashlib
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-# ---------------------------------------------------------------------------
-# Constants  (tuned for a single-user desktop app)
-# ---------------------------------------------------------------------------
+
 SALT_LENGTH   = 16          # bytes — fed to scrypt
 NONCE_LENGTH  = 12          # bytes — GCM standard
 KEY_LENGTH    = 32          # bytes — AES-256
@@ -63,9 +16,7 @@ SCRYPT_R      = 8
 SCRYPT_P      = 1
 
 
-# ---------------------------------------------------------------------------
-# Key derivation
-# ---------------------------------------------------------------------------
+
 def derive_key(password: str, salt: bytes) -> bytes:
     """
     Derive a 256-bit AES key from a user password and a random salt.
@@ -90,9 +41,6 @@ def derive_key(password: str, salt: bytes) -> bytes:
     )
 
 
-# ---------------------------------------------------------------------------
-# Authenticated encryption  (AES-256-GCM)
-# ---------------------------------------------------------------------------
 def encrypt(plaintext: bytes, key: bytes) -> bytes:
     """
     Encrypt *plaintext* and return a self-describing blob that can be stored
@@ -143,9 +91,6 @@ def decrypt(blob: bytes, key: bytes) -> bytes:
     return aesgcm.decrypt(nonce, ciphertext, None)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def generate_salt() -> bytes:
     """Return a fresh cryptographic salt (16 bytes)."""
     return os.urandom(SALT_LENGTH)
