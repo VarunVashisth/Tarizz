@@ -112,6 +112,7 @@ class _AuthWindow:
             tk.Label(card, text="Confirm Password", font=("Segoe UI", 10),
                      fg="#aaaaaa", bg="#2a2a2a", anchor="w").pack(fill="x", pady=(8, 0))
             self.confirm_entry = self._make_entry(card)
+            tk.Label(card, text="Example : Abc123", bg="#2a2a2a", fg="#888888").pack(fill="x" , pady=4)
 
             # Live strength feedback label
             self.strength_label = tk.Label(

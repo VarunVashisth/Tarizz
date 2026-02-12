@@ -473,6 +473,16 @@ class ProjectDashboard:
             font=('Segoe UI', 8), wraplength=180
         )
         self.info_label.pack(pady=20)
+
+        self.hint_label = tk.Label(
+        self.sidebar,
+        text="Hints:\n• Ctrl+h: Highlight\n• Double-click on card to open \n• Drag and drop to rearrange \n•Codeblock: '''code'''\n•bold/italc/underline: Ctrl+b/i/u",
+        bg='#2a2a2a', fg='#AAAAAA',
+        font=('Segoe UI', 8), justify='left', wraplength=180
+        )
+        self.hint_label.pack(side='bottom', pady=10)
+
+
         
     def create_canvas(self):
         """Create main canvas area"""

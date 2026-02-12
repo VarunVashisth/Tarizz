@@ -24,7 +24,7 @@ class FlowchartEditor(tk.Frame):
         toolbar = tk.Frame(self, bg='#222222')
         toolbar.pack(side='top', fill='x')
         btn_style = {
-            'bg': '#222222', 'fg': "#3a3636",
+            'bg': '#222222', 'fg': "#aaaaaa",
             'activebackground': '#333333', 'activeforeground': '#ffffff',
             'relief': 'flat', 'bd': 0,
             'font': ('Segoe UI', 10), 'highlightthickness': 0,

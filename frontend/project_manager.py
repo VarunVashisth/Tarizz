@@ -33,10 +33,13 @@ def create_project_manager(parent, project_data=None, parent_card=None):
     """
     class ProjectManager:
         def __init__(self, parent, project_data, parent_card):
+
             self.root = parent
             self.project_data = project_data if project_data is not None else {}
             self.project_id = self.project_data.get('id')  # Database project ID
             self.parent_card = parent_card
+   
+            
             
             if not self.project_id:
                 messagebox.showerror("Error", "Invalid project - no database ID")
@@ -169,10 +172,10 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 if node_info and node_info['node_type'] in ('subpage', 'flowchart'):
                     messagebox.showerror("Error", 
                         f"Cannot add folder under a {node_info['node_type']}.\n"
-                        "Subpages and flowcharts cannot have children.")
+                        "Subpages and flowcharts cannot have children.",parent=self.root)
                     return
             
-            name = simpledialog.askstring("Folder Name", "Enter folder name:")
+            name = simpledialog.askstring("Folder Name", "Enter folder name:", parent=self.root)
             if not name:
                 return
             
@@ -183,13 +186,13 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 self.node_id_to_tree_id[db_node_id] = tree_id
                 self.tree_id_to_node_id[tree_id] = db_node_id
             except ValueError as e:
-                messagebox.showerror("Error", str(e))
+                messagebox.showerror("Error", str(e),parent=self.root)
 
         def add_subpage(self):
             """Add a subpage node"""
             selected = self.tree.selection()
             if not selected:
-                messagebox.showwarning("Warning", "Please select a folder first")
+                messagebox.showwarning("Warning", "Please select a folder first",parent=self.root)
                 return
             
             parent_tree_id = selected[0]
@@ -204,10 +207,10 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 if node_info and node_info['node_type'] in ('subpage', 'flowchart'):
                     messagebox.showerror("Error",
                         f"Cannot add subpage under a {node_info['node_type']}.\n"
-                        "Subpages and flowcharts cannot have children.")
+                        "Subpages and flowcharts cannot have children.",parent=self.root)
                     return
             
-            name = simpledialog.askstring("Subpage Name", "Enter subpage name:")
+            name = simpledialog.askstring("Subpage Name", "Enter subpage name:", parent=self.root)
             if not name:
                 return
             
@@ -220,13 +223,13 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 # Initialize empty content
                 save_subpage(db_node_id, "")
             except ValueError as e:
-                messagebox.showerror("Error", str(e))
+                messagebox.showerror("Error", str(e),parent=self.root)
 
         def add_flowchart(self):
             """Add a flowchart node"""
             selected = self.tree.selection()
             if not selected:
-                messagebox.showwarning("Warning", "Please select a folder first")
+                messagebox.showwarning("Warning", "Please select a folder first",parent=self.root)
                 return
             
             parent_tree_id = selected[0]
@@ -241,10 +244,10 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 if node_info and node_info['node_type'] in ('subpage', 'flowchart'):
                     messagebox.showerror("Error",
                         f"Cannot add flowchart under a {node_info['node_type']}.\n"
-                        "Subpages and flowcharts cannot have children.")
+                        "Subpages and flowcharts cannot have children.",parent=self.root)
                     return
             
-            name = simpledialog.askstring("Flowchart Name", "Enter flowchart name:")
+            name = simpledialog.askstring("Flowchart Name", "Enter flowchart name:", parent=self.root)
             if not name:
                 return
             
@@ -254,13 +257,13 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 self.node_id_to_tree_id[db_node_id] = tree_id
                 self.tree_id_to_node_id[tree_id] = db_node_id
             except ValueError as e:
-                messagebox.showerror("Error", str(e))
+                messagebox.showerror("Error", str(e),)
 
         def rename_item(self):
             """Rename selected node"""
             node_info, tree_id = self.get_selected_node_info()
             if not node_info:
-                messagebox.showwarning("Warning", "Please select an item to rename")
+                messagebox.showwarning("Warning", "Please select an item to rename",)
                 return
             
             old_name = node_info['name']
@@ -275,11 +278,11 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             """Delete selected node and all children"""
             node_info, tree_id = self.get_selected_node_info()
             if not node_info:
-                messagebox.showwarning("Warning", "Please select an item to delete")
+                messagebox.showwarning("Warning", "Please select an item to delete",)
                 return
             
             confirm = messagebox.askyesno("Confirm Delete",
-                f"Delete '{node_info['name']}' and all its contents?")
+                f"Delete '{node_info['name']}' and all its contents?",parent=self.root)
             if not confirm:
                 return
             
@@ -315,12 +318,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 messagebox.showerror(
                     "Export Failed",
                     "Export module not found. Make sure project_export.py is in the same directory.\n\n"
-                    f"Error: {str(e)}"
+                    f"Error: {str(e)}" ,
                 )
             except Exception as e:
                 messagebox.showerror(
                     "Export Failed",
-                    f"An error occurred during export:\n{str(e)}"
+                    f"An error occurred during export:\n{str(e)}" ,
                 )
 
         def on_tree_select(self, event):
@@ -393,7 +396,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             text.bind('<Control-b>', lambda e: (formatter.toggle_bold(), 'break'))
             text.bind('<Control-i>', lambda e: (formatter.toggle_italic(), 'break'))
             text.bind('<Control-u>', lambda e: (formatter.toggle_underline(), 'break'))
-            text.bind('<Control-Shift-h>', lambda e: (formatter.toggle_highlight(), 'break'))
+            text.bind('<Control-h>', lambda e: (formatter.toggle_highlight(), 'break'))
 
 
             # Load content
