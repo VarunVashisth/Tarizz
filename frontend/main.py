@@ -408,6 +408,10 @@ class ProjectDashboard:
         # -------------------------
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
+        menubar.configure(                    
+                    background='#2a2a2a',
+                    foreground='white',
+                    )
 
         # Vault Menu
         vault_menu = tk.Menu(menubar, tearoff=0)
@@ -415,6 +419,12 @@ class ProjectDashboard:
         vault_menu.add_command(label="Create New Vault", command=self.create_new_vault)
         vault_menu.add_separator()
         vault_menu.add_command(label="Exit", command=self.on_close)
+        vault_menu.configure(
+                    background='#2a2a2a',
+                    foreground='white',
+                    activebackground='#404040',
+                    activeforeground='white'
+                )
 
         menubar.add_cascade(label="Vault", menu=vault_menu)
         
