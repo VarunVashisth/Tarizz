@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import PhotoImage, ttk
 import math
 from project_manager import create_project_manager  # <-- Import the function
 import os , sys
@@ -21,7 +21,7 @@ class EditableLabel:
         self.bg = bg
         self.is_editing = False
         self.on_change_callback = on_change_callback  # ← NEW: callback for changes
-        
+
         # Create label
         self.label = tk.Label(
             parent, text=text, font=font, fg=fg, bg=bg,
@@ -402,6 +402,16 @@ class ProjectDashboard:
         self.root.geometry("1200x700")
         self.root.configure(bg='#1a1a1a')
         self.root.minsize(900, 600)
+
+
+        if getattr(sys, 'frozen', False):
+            base_dir = sys._MEIPASS
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(base_dir, "data", "tarizzlogo.png")
+        if os.path.exists(logo_path):
+            self.logo = PhotoImage(file=logo_path)
+            self.root.iconphoto(False, self.logo)
 
         # -------------------------
         # Create Menu Bar

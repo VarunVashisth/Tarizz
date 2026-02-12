@@ -24,8 +24,10 @@ Design decisions
   • No network, no file I/O except what AuthManager does internally.
 """
 
+import os
+import sys
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import PhotoImage, messagebox
 
 
 def run_auth_gate(auth_manager , create_mode = False) -> bool:
@@ -67,6 +69,17 @@ class _AuthWindow:
   
         self.root.configure(bg="#1a1a1a")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        if getattr(sys, 'frozen', False):
+            base_dir = sys._MEIPASS
+        else:
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            
+        logo_path = os.path.join(base_dir, "data", "tarizzlogo.png")
+        if os.path.exists(logo_path):
+            self.logo = PhotoImage(file=logo_path)
+            self.root.iconphoto(False, self.logo)
+
+
         self.create_mode = create_mode
 
         # Centre on screen

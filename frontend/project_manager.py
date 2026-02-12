@@ -1,6 +1,6 @@
 # project_manager.py
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox , filedialog
+from tkinter import PhotoImage, ttk, simpledialog, messagebox , filedialog
 
 import cv2
 from simple_text_editor import create_text_editor
@@ -1118,6 +1118,15 @@ def create_project_manager(parent, project_data=None, parent_card=None):
     window.title(project_data.get('title', 'Project') if project_data else "Project")
     window.geometry("1000x700")
     window.minsize(800, 500)
+    if getattr(sys, 'frozen', False):
+        base_dir = sys._MEIPASS
+    else:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = os.path.join(base_dir, "data", "tarizzlogo.png")
+    if os.path.exists(logo_path):
+        window.logo = PhotoImage(file=logo_path)
+        window.iconphoto(False, window.logo)
+
 
     # Center window
     window.update_idletasks()
