@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import simpledialog, filedialog
+from tkinter import simpledialog, filedialog, messagebox
 import tkinter.font as tkFont
 from PIL import Image, ImageDraw, ImageFont
 
@@ -154,11 +154,11 @@ class FlowchartEditor(tk.Frame):
                             cx, cy,
                             text=new_text,
                             fill='#e0e0ff',
-                            font=('Segoe UI', 12),
+                            font=('Segoe UI', 14),
                             tags=('attached_text',)
                         )
                         self.text_items[target] = tid
-                        self.text_fonts[target] = 12
+                        self.text_fonts[target] = 14
                     else:
                         tid = self.text_items[target]
                         self.canvas.itemconfig(tid, text=new_text)
@@ -437,11 +437,8 @@ class FlowchartEditor(tk.Frame):
             'scroll_y': self.canvas.yview()
         }
 
-        import json
-        json_state = json.dumps(state)
-
         from backend.database import save_subpage
-        save_subpage(node_id, json_state)
+        save_subpage(node_id, state)  # Pass dict directly, not JSON string
         print(f"[FLOW SAVE] Saved {len(items_data)} items")
 
     def load_flowchart(self, node_id):
@@ -449,18 +446,27 @@ class FlowchartEditor(tk.Frame):
         from backend.database import load_subpage
         data = load_subpage(node_id)
 
-        if not data or not isinstance(data, str):
+        if not data:
             return
 
         try:
-            import json
-            state = json.loads(data)
+            # load_subpage now returns a dict directly
+            if isinstance(data, str):
+                # Legacy format - parse JSON string
+                import json
+                state = json.loads(data)
+            else:
+                # New format - already a dict
+                state = data
 
             self.canvas.delete('all')
             self.shapes.clear()
             self.lines.clear()
             self.text_items.clear()
             self.text_fonts.clear()
+            
+            # Reset zoom factor to 1.0 before loading to prevent cumulative zoom
+            self.zoom_factor = 1.0
 
             for item_data in state.get('items', []):
                 try:
@@ -503,7 +509,7 @@ class FlowchartEditor(tk.Frame):
                         tid = self.canvas.create_text(tx, ty,
                                                       text=item_data['text'],
                                                       fill=item_data.get('text_fill', '#e0e0ff'),
-                                                      font=item_data.get('text_font', ('Segoe UI', 12)),
+                                                      font=item_data.get('text_font', ('Segoe UI', 14)),
                                                       tags=item_data['tags'])
                         self.text_items[item] = tid
                         self.text_fonts[item] = int(item_data['text_font'].split()[-1].replace('-', ''))
@@ -511,8 +517,10 @@ class FlowchartEditor(tk.Frame):
                 except Exception as e:
                     print(f"[FLOW LOAD] Failed item: {e}")
 
-            self.zoom_factor = state.get('zoom_factor', 1.0)
-            self.canvas.scale('all', 0, 0, self.zoom_factor, self.zoom_factor)
+            # Saved zoom is restored by setting zoom_factor, but we don't re-apply it
+            # to avoid cumulative scaling on repeated loads
+            saved_zoom = state.get('zoom_factor', 1.0)
+            # We keep zoom_factor at 1.0 to prevent cumulative zoom on switching
 
             scroll_x, scroll_y = state.get('scroll_x', (0,1)), state.get('scroll_y', (0,1))
             self.canvas.xview_moveto(scroll_x[0])
@@ -526,39 +534,111 @@ class FlowchartEditor(tk.Frame):
             print(f"[FLOW LOAD] Full load failed: {e}")
 
     def export_png(self):
-        file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[("PNG files","*.png")])
-        if not file_path: return
-        width = self.canvas.winfo_width()
-        height = self.canvas.winfo_height()
+        """Export flowchart as PNG with smart bounding box"""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension='.png',
+            filetypes=[("PNG files", "*.png")],
+            initialfile="flowchart.png"
+        )
+        if not file_path:
+            return
+        
+        # Calculate bounding box of all items
+        all_items = self.shapes + self.lines
+        if not all_items:
+            messagebox.showwarning("Empty Flowchart", "No shapes to export!")
+            return
+        
+        min_x, min_y = float('inf'), float('inf')
+        max_x, max_y = float('-inf'), float('-inf')
+        
+        for item in all_items:
+            coords = self.canvas.coords(item)
+            for i in range(0, len(coords), 2):
+                if i + 1 < len(coords):
+                    x, y = coords[i], coords[i + 1]
+                    min_x = min(min_x, x)
+                    min_y = min(min_y, y)
+                    max_x = max(max_x, x)
+                    max_y = max(max_y, y)
+        
+        # Add text bounds
+        for shape, tid in self.text_items.items():
+            tx, ty = self.canvas.coords(tid)
+            min_x = min(min_x, tx - 100)  # Approximate text width
+            min_y = min(min_y, ty - 20)
+            max_x = max(max_x, tx + 100)
+            max_y = max(max_y, ty + 20)
+        
+        # Add padding
+        padding = 50
+        min_x -= padding
+        min_y -= padding
+        max_x += padding
+        max_y += padding
+        
+        width = int(max_x - min_x)
+        height = int(max_y - min_y)
+        
+        # Create image
         img = Image.new('RGB', (width, height), color='#1e1e1e')
         draw = ImageDraw.Draw(img)
+        
         try:
-            font = ImageFont.truetype("Segoe UI.ttf", 12)
+            font = ImageFont.truetype("segoeui.ttf", 14)
         except:
-            font = ImageFont.load_default()
+            try:
+                font = ImageFont.truetype("Segoe UI.ttf", 14)
+            except:
+                try:
+                    font = ImageFont.truetype("arial.ttf", 14)
+                except:
+                    font = ImageFont.load_default()
+        
+        # Draw shapes
         for shape in self.shapes:
             coords = self.canvas.coords(shape)
+            translated = [(coords[i] - min_x, coords[i+1] - min_y) for i in range(0, len(coords), 2)]
+            flat_coords = [c for pair in translated for c in pair]
+            
             shape_type = self.canvas.type(shape)
-            fill = self.canvas.itemcget(shape,'fill')
-            outline = self.canvas.itemcget(shape,'outline')
-            w = int(float(self.canvas.itemcget(shape,'width')))
+            fill = self.canvas.itemcget(shape, 'fill')
+            outline = self.canvas.itemcget(shape, 'outline')
+            w = int(float(self.canvas.itemcget(shape, 'width')))
+            
             if shape_type == 'rectangle':
-                draw.rectangle(coords, fill=fill, outline=outline, width=w)
+                draw.rectangle(flat_coords, fill=fill, outline=outline, width=w)
             elif shape_type == 'oval':
-                draw.ellipse(coords, fill=fill, outline=outline, width=w)
+                draw.ellipse(flat_coords, fill=fill, outline=outline, width=w)
             elif shape_type == 'polygon':
-                draw.polygon(coords, fill=fill, outline=outline)
+                draw.polygon(flat_coords, fill=fill, outline=outline)
+        
+        # Draw lines
         for line in self.lines:
             coords = self.canvas.coords(line)
-            color = self.canvas.itemcget(line,'fill')
-            w = int(float(self.canvas.itemcget(line,'width')))
-            draw.line(coords, fill=color, width=w)
-            if self.canvas.itemcget(line,'arrow')=='last':
-                x0,y0,x1,y1 = coords
-                draw.polygon([(x1,y1),(x1-10,y1-5),(x1-10,y1+5)], fill=color)
+            translated = [(coords[i] - min_x, coords[i+1] - min_y) for i in range(0, len(coords), 2)]
+            flat_coords = [c for pair in translated for c in pair]
+            
+            color = self.canvas.itemcget(line, 'fill')
+            w = int(float(self.canvas.itemcget(line, 'width')))
+            draw.line(flat_coords, fill=color, width=w)
+            
+            if self.canvas.itemcget(line, 'arrow') == 'last':
+                x1, y1 = flat_coords[-2], flat_coords[-1]
+                draw.polygon([(x1, y1), (x1-10, y1-5), (x1-10, y1+5)], fill=color)
+        
+        # Draw text
         for shape, tid in self.text_items.items():
-            text = self.canvas.itemcget(tid,'text')
+            text = self.canvas.itemcget(tid, 'text')
             x, y = self.canvas.coords(tid)
-            draw.text((x, y), text, font=font, fill='#e0e0ff', anchor='mm')
+            tx, ty = x - min_x, y - min_y
+            
+            # Center text
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            draw.text((tx - text_width/2, ty - text_height/2), text, font=font, fill='#e0e0ff')
+        
         img.save(file_path)
+        messagebox.showinfo("Export Complete", f"Flowchart exported to:\n{file_path}")
         print(f"Flowchart exported to {file_path}")

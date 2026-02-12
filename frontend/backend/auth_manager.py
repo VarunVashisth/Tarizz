@@ -303,7 +303,7 @@ class AuthManager:
         self.session_key = key
         self._reset_lockout()
 
-    def login(self, password: str) -> bool:
+    def login(self, password: str , vault_id: str = None) -> bool:
         """
         Verify the password and activate the session for the corresponding vault.
 
@@ -321,7 +321,9 @@ class AuthManager:
             return False
 
         # --- check if vault exists for this password ---
-        vault_id = self.generate_vault_id(password)
+        if vault_id is None:
+            vault_id = self.generate_vault_id(password)
+            
         if not self.vault_exists(vault_id):
             self._record_failure()
             return False

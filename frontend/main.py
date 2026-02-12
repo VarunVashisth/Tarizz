@@ -358,6 +358,7 @@ class ProjectDashboard:
         self.root = tk.Tk()
         self.selected_card = None
         self.auth_manager = auth_manager
+
         
         self.setup_window()
         self.create_sidebar()
@@ -397,10 +398,25 @@ class ProjectDashboard:
         
     def setup_window(self):
         """Configure main window"""
-        self.root.title("Project Dashboard")
+        self.root.title(f"Tarizz - Vault: {self.auth_manager.vault_id}")
         self.root.geometry("1200x700")
         self.root.configure(bg='#1a1a1a')
         self.root.minsize(900, 600)
+
+        # -------------------------
+        # Create Menu Bar
+        # -------------------------
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        # Vault Menu
+        vault_menu = tk.Menu(menubar, tearoff=0)
+        vault_menu.add_command(label="Switch Vault", command=self.switch_vault)
+        vault_menu.add_command(label="Create New Vault", command=self.create_new_vault)
+        vault_menu.add_separator()
+        vault_menu.add_command(label="Exit", command=self.on_close)
+
+        menubar.add_cascade(label="Vault", menu=vault_menu)
         
     def create_sidebar(self):
         """Create left sidebar with controls"""
@@ -483,8 +499,7 @@ class ProjectDashboard:
             self.cards.append(card)
 
             self.arrange_cards()
-            self.select_card
-
+            self.select_card(card)  # auto-select new card for convenience
     def open_project_manager(self, card):
 
         if hasattr(card , '_manager_window') and card._manager_window and card._manager_window.winfo_exists():
@@ -614,6 +629,69 @@ class ProjectDashboard:
         else:
             self.delete_btn.configure(state='disabled')
             self.info_label.configure(text="Click a card to select")
+
+    def switch_vault(self):
+        """
+        Logout current vault and re-run authentication gate.
+        """
+    
+        from backend.database import reset_database, set_db_path, Database
+        import sys
+    
+        # 1️⃣ Destroy current UI FIRST
+        self.root.destroy()
+    
+        # 2️⃣ Logout auth session
+        self.auth_manager.logout()
+    
+        # 3️⃣ Reset database singleton properly
+        reset_database()
+    
+        # 4️⃣ Relaunch authentication window
+        authenticated = run_auth_gate(self.auth_manager)
+    
+        if not authenticated:
+            sys.exit()
+    
+        # 5️⃣ Rebind DB to new vault
+        set_db_path(self.auth_manager.get_database_path())
+        Database.set_session_key(self.auth_manager.get_session_key())
+    
+        # 6️⃣ Relaunch dashboard cleanly
+        new_app = ProjectDashboard(self.auth_manager)
+        new_app.run()
+    
+    def create_new_vault(self):
+        """
+        Create a brand new vault and open password setup UI.
+        """
+    
+        from backend.database import reset_database, set_db_path, Database
+        import sys
+    
+        # Destroy dashboard first
+        self.root.destroy()
+    
+        # Reset DB
+        reset_database()
+    
+        # Clear current session
+        self.auth_manager.logout()
+    
+        # Launch auth gate in CREATE MODE
+        authenticated = run_auth_gate(self.auth_manager, create_mode=True)
+    
+        if not authenticated:
+            sys.exit()
+    
+        # Bind new vault DB
+        set_db_path(self.auth_manager.get_database_path())
+        Database.set_session_key(self.auth_manager.get_session_key())
+    
+        # Relaunch dashboard
+        new_app = ProjectDashboard(self.auth_manager)
+        new_app.run()
+
 
     def on_close(self):
         """Handle application close - save state"""

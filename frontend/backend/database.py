@@ -436,11 +436,20 @@ class Database:
             conn.close()
 
 
+    def reset_database(self):
+            global _db_instance
+            _db_instance = None
+            Database._instance = None
+
+
 # ============================================================================
 # PUBLIC API (for project_manager.py to import)
 # ============================================================================
 
 
+def reset_database():
+    """Reset the entire database (for testing)"""
+    return get_db().reset_database()
 
 def create_node(project_id: int, parent_id: Optional[int], 
                 node_type: str, name: str) -> int:

@@ -28,7 +28,7 @@ import tkinter as tk
 from tkinter import messagebox
 
 
-def run_auth_gate(auth_manager) -> bool:
+def run_auth_gate(auth_manager , create_mode = False) -> bool:
     """
     Block until the user authenticates or closes the window.
 
@@ -42,7 +42,7 @@ def run_auth_gate(auth_manager) -> bool:
       • Creates and destroys a Tk() root window.
       • Calls auth_manager.create_password() or auth_manager.login().
     """
-    gate = _AuthWindow(auth_manager)
+    gate = _AuthWindow(auth_manager , create_mode=create_mode)
     gate.root.mainloop()
     return gate.authenticated
 
@@ -56,7 +56,7 @@ class _AuthWindow:
       authenticated – set to True only on successful login/create.
     """
 
-    def __init__(self, auth_manager):
+    def __init__(self, auth_manager , create_mode=False):
         self.auth_manager  = auth_manager
         self.authenticated = False
 
@@ -67,8 +67,10 @@ class _AuthWindow:
   
         self.root.configure(bg="#1a1a1a")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.create_mode = create_mode
 
         # Centre on screen
+
         self.root.update_idletasks()
         sx = self.root.winfo_screenwidth()
         sy = self.root.winfo_screenheight()
@@ -97,7 +99,7 @@ class _AuthWindow:
         card.pack(padx=40, pady=0, fill="x")
 
         # --- first run: create password ---
-        if self.auth_manager.is_first_run():
+        if self.create_mode or self.auth_manager.is_first_run():
             tk.Label(
                 card, text="Create Master Password",
                 font=("Segoe UI", 13, "bold"), fg="white", bg="#2a2a2a"
@@ -128,6 +130,36 @@ class _AuthWindow:
                 font=("Segoe UI", 13, "bold"), fg="white", bg="#2a2a2a"
             ).pack(pady=(0, 12))
 
+            # --- Vault Selection ---
+            accounts = self.auth_manager.list_accounts()
+            self.selected_vault = tk.StringVar()
+            
+            last_used = self.auth_manager.get_last_used_vault()
+            if last_used:
+                self.selected_vault.set(last_used)
+            
+            for acc in accounts:
+                vault_id = acc["vault_id"]
+                display_name = acc.get("display_name", "My Vault")
+                last_login = acc.get("last_login", "Never")
+            
+                tk.Radiobutton(
+                    card,
+                    text=f"{display_name}  (Last: {last_login[:10]})",
+                    variable=self.selected_vault,
+                    value=vault_id,
+                    bg="#2a2a2a",
+                    fg="white",
+                    selectcolor="#333333",
+                    activebackground="#2a2a2a",
+                    activeforeground="white",
+                    anchor="w",
+                    font=("Segoe UI", 10)
+                ).pack(fill="x", pady=2)
+            
+            tk.Label(card, text="", bg="#2a2a2a").pack(pady=6)
+
+
             tk.Label(card, text="Master Password", font=("Segoe UI", 10),
                      fg="#aaaaaa", bg="#2a2a2a", anchor="w").pack(fill="x")
             self.pwd_entry = self._make_entry(card)
@@ -140,6 +172,8 @@ class _AuthWindow:
             self.status_label.pack(fill="x", pady=(4, 12))
 
             self._make_button(card, "Unlock", self._on_login)
+            self._make_button(card, "+ Create New Vault", self._switch_to_create_mode)
+
 
             # Bind Enter key
             self.pwd_entry.bind("<Return>", lambda e: self._on_login())
@@ -147,6 +181,14 @@ class _AuthWindow:
     # ------------------------------------------------------------------
     # Helpers for building styled widgets
     # ------------------------------------------------------------------
+
+    def _switch_to_create_mode(self):
+       self.root.destroy()
+       result = run_auth_gate(self.auth_manager, create_mode=True)
+       self.authenticated = result
+
+
+
     def _make_entry(self, parent) -> tk.Entry:
         e = tk.Entry(
             parent,
@@ -219,7 +261,12 @@ class _AuthWindow:
             return
 
         pwd = self.pwd_entry.get()
-        if self.auth_manager.login(pwd):
+        selected_vault_id = self.selected_vault.get()
+        
+        if not selected_vault_id:
+            self.status_label.config(text="Please select a vault.")
+            return
+        if self.auth_manager.login(pwd, selected_vault_id):
             self.authenticated = True
             self.root.destroy()
         else:

@@ -78,6 +78,16 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             tk.Button(btn_frame, text="Add Flowchart", command=self.add_flowchart, **btn_style).pack(fill='x', pady=2)
             tk.Button(btn_frame, text="Rename", command=self.rename_item, **btn_style).pack(fill='x', pady=2)
             tk.Button(btn_frame, text="Delete", command=self.delete_item, **btn_style).pack(fill='x', pady=2)
+            
+            # Separator
+            tk.Frame(btn_frame, bg='#444444', height=2).pack(fill='x', pady=8)
+            
+            # Export button with different styling
+            export_btn_style = btn_style.copy()
+            export_btn_style['bg'] = '#0078d4'
+            export_btn_style['fg'] = '#ffffff'
+            export_btn_style['activebackground'] = '#005a9e'
+            tk.Button(btn_frame, text="📄 Export to PDF", command=self.export_project, **export_btn_style).pack(fill='x', pady=2)
 
             # Editor container
             self.editor_container = ttk.Frame(self.root)
@@ -284,6 +294,34 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 self.current_editor = None
                 self.current_node_id = None
 
+        def export_project(self):
+            """Export entire project to PDF"""
+            # Save current page before exporting
+            if self.current_node_id and self.current_editor:
+                self.save_current_page()
+            
+            try:
+                from project_export import export_project
+                import backend.database as db
+                
+                success = export_project(
+                    self.project_id,
+                    self.project_data.get('title', 'Project'),
+                    db
+                )
+                
+            except ImportError as e:
+                messagebox.showerror(
+                    "Export Failed",
+                    "Export module not found. Make sure project_export.py is in the same directory.\n\n"
+                    f"Error: {str(e)}"
+                )
+            except Exception as e:
+                messagebox.showerror(
+                    "Export Failed",
+                    f"An error occurred during export:\n{str(e)}"
+                )
+
         def on_tree_select(self, event):
             """Handle tree item selection"""
             node_info, tree_id = self.get_selected_node_info()
@@ -384,9 +422,15 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 elif tag_name.startswith('size_'):
                     try:
                         size = int(tag_name.replace('size_', ''))
-                        text.tag_configure(tag_name, font=(text.cget('font').split()[0], f'-{size}'))
-                    except tk.TclError:
-                            pass
+                        current_font = text.cget('font')
+                        if isinstance(current_font, str):
+                            family = current_font.split()[0]
+                        else:
+                            family = current_font[0] if current_font else 'Segoe UI'
+                        text.tag_configure(tag_name, font=(family, size))  # size is int, not string
+                    except (tk.TclError, ValueError, IndexError) as e:
+                        print(f"[WARN] Failed to configure {tag_name}: {e}")
+                        pass
 
                 # Apply ranges
                 for start_end in ranges_list:
@@ -1103,18 +1147,6 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     self.current_editor.save_flowchart(self.current_node_id)
                 # Optional: add else for future types
 
-
-            
-            # Update media positions
-            for window_name in text.window_names():
-                try:
-                    widget = text.nametowidget(window_name)
-                    if hasattr(widget, 'media_id'):
-                        pos = text.index(window_name)
-                        from backend.database import update_media_position
-                        update_media_position(widget.media_id, pos)
-                except Exception as e:
-                    print(f"Failed to update media position for widget {widget}: {e}")
     # Create UI
     # Create UI in a separate window
     window = tk.Toplevel()
