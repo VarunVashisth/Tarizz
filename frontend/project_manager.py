@@ -7,6 +7,7 @@ from simple_text_editor import create_text_editor
 import sys
 import os
 import io
+import subprocess
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend.database import (
     create_node, get_nodes, get_all_nodes_for_project,
@@ -732,7 +733,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         label = tk.Label(text, text="[Broken Image]", bg='red', fg='white')
 
                 elif media_type == 'video':
-                    thumb_frame = tk.Frame(text, bg='#0d1117', width=360, height=200, bd=0, relief='flat')
+                    thumb_frame = tk.Frame(text, bg="#b5b6b9", width=360, height=200, bd=0, relief='flat')
 
                     # Background thumbnail (real or placeholder)
                     bg_photo = None
@@ -758,12 +759,24 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
                     tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
                     # Click to play (whole frame)
-                    thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+
 
                     # Right-click download menu
                     menu = tk.Menu(thumb_frame, tearoff=0, bg='#1e1e2e', fg='#ddd', bd=0)
                     menu.add_command(label="Download video", command=lambda fp=file_path: download_file(fp))
                     thumb_frame.bind("<Button-3>", lambda e: menu.post(e.x_root, e.y_root))
+
+                    def on_thumb_click(event, fp=file_path):
+                        print("Clicked!")
+                        play_video(fp, parent=self.root)
+                    
+                    # Bind to frame
+                    thumb_frame.bind('<Button-1>', on_thumb_click)
+                    # Bind to background image label
+                    bg_label.bind('<Button-1>', on_thumb_click)
+                    # Bind to play icon label
+                    for child in thumb_frame.winfo_children():
+                        child.bind('<Button-1>', on_thumb_click)
 
                     # Hover effect — bind directly to thumb_frame & play_overlay
                    # def on_enter(e):
@@ -894,57 +907,39 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             # ───────────────────────────────────────────────
             #   Media action helpers
             # ───────────────────────────────────────────────
-            def play_video(file_path):
+            def play_video(file_path , parent=None):
                 """Reliable cross-platform video playback using system default"""
-                import subprocess
-                import sys
-                import os
-                from tkinter import messagebox
-
-                print(f"[PLAY VIDEO] Starting playback for: {file_path}")
-
+                
+                file_path = os.path.abspath(file_path)
+                print(f"[PLAY VIDEO] Attempting to play: {file_path}")
+            
                 if not os.path.exists(file_path):
-                    messagebox.showerror("File Not Found", f"Video file missing:\n{file_path}")
+                    messagebox.showerror("File Not Found", f"Video file missing:\n{file_path}", parent=parent)
                     return
-
+            
                 try:
-                    if sys.platform.startswith('linux'):
-                        print("[PLAY] Linux - using xdg-open via shell")
-                        # Use shell=True + & to detach completely + inherit env/session
-                        subprocess.call(
-                            f'xdg-open "{file_path}" &',
-                            shell=True,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            close_fds=True
-                        )
-                        print("[PLAY] xdg-open command sent")
-
-                    elif sys.platform == 'darwin':
-                        subprocess.call(['open', file_path])
-
-                    elif sys.platform.startswith('win'):
+                    if sys.platform.startswith('win'):
                         os.startfile(file_path)
-
+                        print("[PLAY] Windows - os.startfile used")
+            
+                    elif sys.platform.startswith('linux'):
+                        subprocess.Popen(f'xdg-open "{file_path}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        print("[PLAY] Linux - xdg-open used")
+            
+                    elif sys.platform == 'darwin':
+                        subprocess.Popen(f'open "{file_path}"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        print("[PLAY] macOS - open used")
+            
                     else:
-                        raise OSError("Unsupported OS")
-
-                    # Small non-blocking confirmation
-                    self.current_editor_frame.after(500, lambda: 
-                        messagebox.showinfo("Starting", "Video opening in default player...", 
-                                            parent=self.current_editor_frame))
-
+                        raise OSError(f"Unsupported OS: {sys.platform}")
+            
                 except Exception as e:
                     print(f"[PLAY ERROR] {type(e).__name__}: {str(e)}")
                     messagebox.showerror(
                         "Playback Error",
-                        f"Cannot open video.\n\n"
-                        f"Error: {str(e)}\n\n"
-                        f"Try opening manually: {file_path}"
+                        f"Cannot open video.\n\nError: {str(e)}\n\nTry opening manually: {file_path}",
+                        parent=parent
                     )
-
-
-    
             def download_file(file_path):
                 """Let user choose where to save a copy of the media file"""
                 from tkinter import filedialog
@@ -959,7 +954,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 dest_path = filedialog.asksaveasfilename(
                     defaultextension=os.path.splitext(default_name)[1],
                     initialfile=default_name,
-                    title="Save As..."
+                    title="Save As...",
+                    parent=self.root,
                 )
     
                 if dest_path:

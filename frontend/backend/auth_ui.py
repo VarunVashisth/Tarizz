@@ -63,7 +63,7 @@ class _AuthWindow:
         # --- root window ---
         self.root = tk.Tk()
         self.root.title("Tarizz – Unlock Your Vault")
-        self.root.geometry("420x500")
+        self.root.geometry("420x550")
   
         self.root.configure(bg="#1a1a1a")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
