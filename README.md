@@ -28,6 +28,8 @@
 
 **Tarizz** is a comprehensive project management and documentation tool designed for professionals, developers, and teams who need to organize, document, and visualize their projects. With Tarizz, you can create hierarchical project structures, write rich-text documentation, embed media, design flowcharts, and manage all your project assets in one elegant interface.
 
+![alt text](/data/tarizzlogo.ico)
+
 ### What is Tarizz?
 
 Tarizz combines the power of:
