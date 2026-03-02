@@ -125,7 +125,7 @@ Mix and Match:
 
 ---
 
-## Installation
+## Installation Process
 
 ### Prerequisites
 ```bash
