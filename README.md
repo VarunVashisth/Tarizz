@@ -93,18 +93,7 @@ Supported Media Types:
     └── Media positions auto-saved
 ```
 
-#### 5. **Professional Play Button**
-```
-Features:
-✓ Circular green button (70x70px)
-✓ Hover effects (color brightens)
-✓ Hand cursor feedback
-✓ No external dependencies
-✓ Responsive and smooth
-✓ 6 color schemes available
-```
-
-#### 6. **Flowchart Designer**
+#### 5. **Flowchart Designer**
 ```
 Elements:
 ├── Nodes/Boxes
@@ -114,7 +103,7 @@ Elements:
 └── Save/Load designs
 ```
 
-#### 7. **Formatting Compatibility**
+#### 6. **Formatting Compatibility**
 ```
 Mix and Match:
 ✓ Bold + Font + Size = All work together
