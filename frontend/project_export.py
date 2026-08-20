@@ -15,7 +15,9 @@ from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image, Table, TableStyle
+from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, PageBreak,
+                               Image, Table, TableStyle, HRFlowable, Preformatted,
+                               KeepTogether)
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas as pdf_canvas
 from PIL import Image as PILImage
@@ -55,7 +57,7 @@ class ProjectExporter:
             # Create PDF document
             doc = SimpleDocTemplate(
                 output_path,
-                pagesize=letter,
+                pagesize=A4,
                 rightMargin=0.75*inch,
                 leftMargin=0.75*inch,
                 topMargin=0.75*inch,
@@ -79,7 +81,7 @@ class ProjectExporter:
             story.extend(self._create_content(toc_items, styles))
             
             # Build PDF
-            doc.build(story)
+            doc.build(story, onFirstPage=self._draw_page, onLaterPages=self._draw_page)
             
             # Cleanup temp files
             self._cleanup_temp_files()
@@ -107,6 +109,29 @@ class ProjectExporter:
             textColor=colors.HexColor('#1a1a1a'),
             spaceAfter=12,
             alignment=TA_CENTER
+        ))
+
+        styles.add(ParagraphStyle(
+            name='SectionLabel', parent=styles['Normal'], fontSize=8,
+            leading=10, textColor=colors.HexColor('#64748b'),
+            uppercase=True, spaceBefore=8, spaceAfter=6,
+        ))
+        styles.add(ParagraphStyle(
+            name='CodeBlock', parent=styles['Code'], fontName='Courier',
+            fontSize=8.5, leading=12, textColor=colors.HexColor('#e2e8f0'),
+            backColor=colors.HexColor('#0f172a'), borderColor=colors.HexColor('#334155'),
+            borderWidth=0.5, borderPadding=10, leftIndent=8, rightIndent=8,
+            spaceBefore=7, spaceAfter=9,
+        ))
+        styles.add(ParagraphStyle(
+            name='ImageMarker', parent=styles['Code'], fontSize=9,
+            textColor=colors.HexColor('#2563eb'), backColor=colors.HexColor('#eff6ff'),
+            borderPadding=5, spaceBefore=4, spaceAfter=4,
+        ))
+        styles.add(ParagraphStyle(
+            name='Caption', parent=styles['Normal'], fontSize=8.5, leading=11,
+            textColor=colors.HexColor('#64748b'), alignment=TA_CENTER,
+            spaceBefore=4, spaceAfter=12,
         ))
         
         # Heading 1
@@ -151,19 +176,36 @@ class ProjectExporter:
         ))
         
         return styles
+
+    def _draw_page(self, canvas, doc):
+        """Add restrained documentation-style header, footer and page number."""
+        canvas.saveState()
+        width, height = A4
+        if doc.page > 1:
+            canvas.setStrokeColor(colors.HexColor('#e2e8f0'))
+            canvas.line(doc.leftMargin, height - 38, width - doc.rightMargin, height - 38)
+            canvas.setFont('Helvetica', 8)
+            canvas.setFillColor(colors.HexColor('#64748b'))
+            canvas.drawString(doc.leftMargin, height - 29, self.project_title[:70])
+        canvas.setFont('Helvetica', 8)
+        canvas.setFillColor(colors.HexColor('#94a3b8'))
+        canvas.drawRightString(width - doc.rightMargin, 25, f"Page {doc.page}")
+        canvas.restoreState()
     
     def _create_title_page(self, styles):
         """Create title page elements"""
         story = []
         
         # Title
-        story.append(Spacer(1, 2*inch))
+        story.append(Spacer(1, 1.65*inch))
+        story.append(HRFlowable(width='22%', thickness=4, color=colors.HexColor('#2563eb'),
+                                hAlign='CENTER', spaceAfter=24))
         story.append(Paragraph(self.project_title, styles['CustomTitle']))
         story.append(Spacer(1, 0.5*inch))
         
         # Subtitle
         story.append(Paragraph(
-            "Complete Project Export",
+            "PROJECT DOCUMENTATION",
             styles['Heading2']
         ))
         story.append(Spacer(1, 0.3*inch))
@@ -215,7 +257,7 @@ class ProjectExporter:
         
         for item in toc_items:
             indent = item['level'] * 20
-            icon = "📁" if item['type'] == 'folder' else "📄" if item['type'] == 'subpage' else "📊"
+            icon = "SECTION" if item['type'] == 'folder' else "PAGE" if item['type'] == 'subpage' else "DIAGRAM"
             
             toc_style = ParagraphStyle(
                 name=f'TOC{item["level"]}',
@@ -225,7 +267,7 @@ class ProjectExporter:
             )
             
             story.append(Paragraph(
-                f"{icon} {item['name']}",
+                f"<font color='#64748b' size='7'>{icon}</font> &nbsp; {self._clean_text_for_pdf(item['name'])}",
                 toc_style
             ))
             story.append(Spacer(1, 3))
@@ -240,7 +282,7 @@ class ProjectExporter:
             if item['type'] == 'folder':
                 # Folder heading
                 heading_style = self._get_heading_for_level(item['level'], styles)
-                story.append(Paragraph(f"📁 {item['name']}", heading_style))
+                story.append(Paragraph(self._clean_text_for_pdf(item['name']), heading_style))
                 story.append(Spacer(1, 0.1*inch))
                 
             elif item['type'] == 'subpage':
@@ -270,12 +312,15 @@ class ProjectExporter:
         
         # Heading
         heading_style = self._get_heading_for_level(item['level'], styles)
-        story.append(Paragraph(f"📄 {item['name']}", heading_style))
+        story.append(Paragraph(self._clean_text_for_pdf(item['name']), heading_style))
+        story.append(HRFlowable(width='100%', thickness=0.6, color=colors.HexColor('#cbd5e1'), spaceAfter=10))
         story.append(Spacer(1, 0.15*inch))
         
         # Load content
         content_data = self.db.load_subpage(item['id'])
         
+        media_list = self.db.get_media_for_node(item['id'])
+
         if content_data:
             if isinstance(content_data, dict):
                 content = content_data.get('content', '')
@@ -283,14 +328,8 @@ class ProjectExporter:
                 content = content_data
             
             if content:
-                # Split into paragraphs and add to story
-                paragraphs = content.split('\n')
-                for para in paragraphs:
-                    if para.strip():
-                        # Clean up the text for PDF
-                        clean_para = self._clean_text_for_pdf(para)
-                        story.append(Paragraph(clean_para, styles['CustomBody']))
-                        story.append(Spacer(1, 0.05*inch))
+                content = self._insert_media_markers(content, media_list)
+                story.extend(self._render_document_text(content, styles))
             else:
                 story.append(Paragraph("<i>No content</i>", styles['Normal']))
         else:
@@ -298,14 +337,15 @@ class ProjectExporter:
         
         story.append(Spacer(1, 0.15*inch))
         
-        # Get media for this subpage
-        media_list = self.db.get_media_for_node(item['id'])
-        
         if media_list:
-            story.append(Paragraph("<b>Attached Media:</b>", styles['Normal']))
-            story.append(Spacer(1, 0.1*inch))
+            images = [m for m in media_list if m.get('media_type') == 'image']
+            other_media = [m for m in media_list if m.get('media_type') != 'image']
+            if images:
+                story.append(Spacer(1, 0.12*inch))
+                story.append(Paragraph("IMAGE ASSETS", styles['SectionLabel']))
+                story.append(HRFlowable(width='100%', thickness=0.5, color=colors.HexColor('#dbeafe'), spaceAfter=10))
             
-            for media in media_list:
+            for number, media in enumerate(images, 1):
                 media_type = media.get('media_type', '')
                 file_path = media.get('file_path', '')
                 original_filename = media.get('original_filename', 'unnamed')
@@ -325,13 +365,10 @@ class ProjectExporter:
                         img.drawWidth = img_width * scale
                         img.drawHeight = img_height * scale
                         
-                        story.append(img)
-                        story.append(Spacer(1, 0.1*inch))
-                        story.append(Paragraph(
-                            f"<i>Image: {original_filename}</i>",
-                            styles['Normal']
-                        ))
-                        story.append(Spacer(1, 0.15*inch))
+                        caption = Paragraph(
+                            f"Figure {number} — {self._clean_text_for_pdf(original_filename)}",
+                            styles['Caption'])
+                        story.append(KeepTogether([img, caption]))
                         
                     except Exception as e:
                         print(f"[Export] Failed to embed image {file_path}: {e}")
@@ -341,29 +378,24 @@ class ProjectExporter:
                         ))
                         story.append(Spacer(1, 0.05*inch))
                 
-                elif media_type == 'video':
-                    # List video file name
-                    story.append(Paragraph(
-                        f"• 🎥 Video: {original_filename}",
-                        styles['Normal']
-                    ))
-                    story.append(Spacer(1, 0.05*inch))
-                
-                elif media_type == 'pdf':
-                    # List PDF file name
-                    story.append(Paragraph(
-                        f"• 📄 PDF Document: {original_filename}",
-                        styles['Normal']
-                    ))
-                    story.append(Spacer(1, 0.05*inch))
-                
-                elif media_type == 'doc':
-                    # List document file name
-                    story.append(Paragraph(
-                        f"• 📝 Document: {original_filename}",
-                        styles['Normal']
-                    ))
-                    story.append(Spacer(1, 0.05*inch))
+            if other_media:
+                story.append(Paragraph("ATTACHMENTS", styles['SectionLabel']))
+                rows = [['Type', 'File']]
+                for media in other_media:
+                    rows.append([media.get('media_type', 'file').upper(), media.get('original_filename', 'unnamed')])
+                table = Table(rows, colWidths=[0.95*inch, 5.2*inch], repeatRows=1)
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f1f5f9')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#334155')),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 8.5),
+                    ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#cbd5e1')),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ]))
+                story.append(table)
             
             story.append(Spacer(1, 0.1*inch))
         
@@ -375,7 +407,7 @@ class ProjectExporter:
         
         # Heading
         heading_style = self._get_heading_for_level(item['level'], styles)
-        story.append(Paragraph(f"📊 {item['name']}", heading_style))
+        story.append(Paragraph(self._clean_text_for_pdf(item['name']), heading_style))
         story.append(Spacer(1, 0.15*inch))
         
         # Export flowchart to temporary PNG
@@ -550,6 +582,78 @@ class ProjectExporter:
         except Exception as e:
             print(f"[Export] Failed to export flowchart {node_id}: {e}")
             return None
+
+    @staticmethod
+    def _text_index_to_offset(content, position_index):
+        """Convert a saved Tk index (line.column) into a string offset."""
+        try:
+            line_no, column = (int(value) for value in str(position_index).split('.', 1))
+            lines = content.splitlines(keepends=True)
+            if line_no < 1:
+                return 0
+            if line_no > len(lines):
+                return len(content)
+            return min(sum(len(line) for line in lines[:line_no - 1]) + column, len(content))
+        except (TypeError, ValueError):
+            return len(content)
+
+    def _insert_media_markers(self, content, media_list):
+        """Represent editor windows at their original locations in exported text."""
+        insertions = []
+        for media in media_list:
+            if media.get('media_type') != 'image':
+                continue
+            name = media.get('original_filename') or 'unnamed'
+            marker = f"{{image{{{name}}}}}"
+            offset = self._text_index_to_offset(content, media.get('position_index'))
+            insertions.append((offset, marker))
+
+        # Descending offsets ensure earlier insertions do not shift later ones.
+        for offset, marker in sorted(insertions, key=lambda value: value[0], reverse=True):
+            before = '\n' if offset and content[offset - 1] != '\n' else ''
+            after = '\n' if offset < len(content) and content[offset] != '\n' else ''
+            content = content[:offset] + before + marker + after + content[offset:]
+        return content
+
+    def _render_document_text(self, content, styles):
+        """Render prose, image references and triple-quote code as distinct blocks."""
+        story = []
+        pieces = __import__('re').split(r"('''.*?''')", content, flags=__import__('re').DOTALL)
+        marker_pattern = __import__('re').compile(r'\{image\{([^}]+)\}\}')
+
+        for piece in pieces:
+            if not piece:
+                continue
+            if piece.startswith("'''") and piece.endswith("'''"):
+                code = piece[3:-3].strip('\n')
+                code_text = Preformatted(self._clean_text_for_pdf(code), styles['CodeBlock'])
+                code_card = Table([[code_text]], colWidths=[6.15 * inch])
+                code_card.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#0f172a')),
+                    ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor('#334155')),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 11),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 11),
+                    ('TOPPADDING', (0, 0), (-1, -1), 9),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
+                ]))
+                story.extend([Spacer(1, 5), code_card, Spacer(1, 8)])
+                continue
+
+            for paragraph in piece.split('\n'):
+                if not paragraph.strip():
+                    story.append(Spacer(1, 4))
+                    continue
+                match = marker_pattern.fullmatch(paragraph.strip())
+                if match:
+                    marker = self._clean_text_for_pdf(paragraph.strip())
+                    story.append(Paragraph(marker, styles['ImageMarker']))
+                else:
+                    clean = self._clean_text_for_pdf(paragraph)
+                    clean = marker_pattern.sub(
+                        lambda m: "<font name='Courier' color='#2563eb'>" +
+                                  self._clean_text_for_pdf(m.group(0)) + "</font>", clean)
+                    story.append(Paragraph(clean, styles['CustomBody']))
+        return story
     
     def _clean_text_for_pdf(self, text):
         """Clean text for PDF output (escape XML special chars)"""

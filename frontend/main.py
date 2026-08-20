@@ -357,7 +357,7 @@ class ProjectDashboard:
         
     def setup_window(self):
         """Configure main window"""
-        self.root.title(f"Tarizz - Vault: {self.auth_manager.vault_id}")
+        self.root.title(f"Tarizz - Vault: {self.auth_manager}")
         self.root.geometry("1200x700")
         self.root.configure(bg='#1a1a1a')
         self.root.minsize(900, 600)
@@ -693,7 +693,7 @@ def main():
         print("Authentication cancelled")
         return
     
-    print(f"Authenticated successfully! Vault: {auth_manager.vault_id}")
+    print(f"Authenticated successfully! Vault: {auth_manager.username}")
     print(f"Database path: {auth_manager.get_database_path()}")
 
     from backend.database import set_db_path , Database

@@ -19,6 +19,8 @@ class FlowchartEditor(tk.Frame):
         self.zoom_factor = 1.0
         self.move_start = None
         self.pan_start = None
+        self._save_timer = None
+        self._grid_drawn = False
 
         # Toolbar
         toolbar = tk.Frame(self, bg='#222222')
@@ -64,7 +66,7 @@ class FlowchartEditor(tk.Frame):
         self.canvas.bind("<ButtonRelease-2>", self.end_pan)
 
         parent.bind_all("<Control-t>", self.text_hotkey)
-        parent.bind("<Configure>", lambda e: self.draw_grid())
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
 
         self.canvas.bind("<Escape>", self.cancel_text_mode)
 
@@ -76,15 +78,21 @@ class FlowchartEditor(tk.Frame):
 
 
     def draw_grid(self):
+        """Draw one cheap grid made from lines instead of 10,000 oval objects."""
         self.canvas.delete('gridline')
-        step = 20
-        radius = 1
-        max_width = 2000
-        max_height = 2000
-        for i in range(0, max_width, step):
-            for j in range(0, max_height, step):
-                self.canvas.create_oval(i-radius, j-radius, i+radius, j+radius,
-                                        fill='#333333', outline='', tags='gridline')
+        step = GRID_SIZE
+        max_width = 3000
+        max_height = 3000
+        for x in range(0, max_width + 1, step):
+            self.canvas.create_line(x, 0, x, max_height, fill='#292929', tags='gridline')
+        for y in range(0, max_height + 1, step):
+            self.canvas.create_line(0, y, max_width, y, fill='#292929', tags='gridline')
+        self.canvas.tag_lower('gridline')
+        self._grid_drawn = True
+
+    def _on_canvas_configure(self, event=None):
+        if not self._grid_drawn:
+            self.draw_grid()
 
     def set_tool(self, tool):
         if tool == 'zoom_in':
@@ -164,6 +172,7 @@ class FlowchartEditor(tk.Frame):
                         self.canvas.itemconfig(tid, text=new_text)
 
                     self.update_shape_size(target, new_text)
+                    self.schedule_save()
 
             # Exit mode AFTER dialog (or click outside)
             self.cancel_text_mode(evt)
@@ -247,7 +256,8 @@ class FlowchartEditor(tk.Frame):
             x0, y0, x1, y1 = bbox
             margin = 200
             self.canvas.config(scrollregion=(x0-margin, y0-margin, x1+margin, y1+margin))
-        self.draw_grid()
+        if not self._grid_drawn:
+            self.draw_grid()
 
     def on_click(self, event):
         self.start_x, self.start_y = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
@@ -290,6 +300,7 @@ class FlowchartEditor(tk.Frame):
 
             self.shapes.append(item)
             self.update_scrollregion()
+            self.schedule_save()
         elif self.current_tool in ['line','arrow']:
             arrow_type = 'last' if self.current_tool=='arrow' else None
             self.current_item = self.canvas.create_line(self.start_x,self.start_y,self.start_x,self.start_y,
@@ -315,6 +326,7 @@ class FlowchartEditor(tk.Frame):
                             if item in self.lines:
                                 self.lines.remove(item)
                             self.update_scrollregion()
+                            self.schedule_save()
                             break
         elif self.current_tool == 'text':
             items = self.canvas.find_overlapping(self.start_x-1,self.start_y-1,self.start_x+1,self.start_y+1)
@@ -345,11 +357,10 @@ class FlowchartEditor(tk.Frame):
             if self.current_item in self.text_items:
                 self.canvas.move(self.text_items[self.current_item], dx, dy)
             self.move_start = (x, y)
-            self.update_scrollregion()
+            # Defer the bounds scan until mouse release.
         elif self.current_tool in ['line','arrow'] and self.current_item:
             self.canvas.coords(self.current_item,self.start_x,self.start_y,x,y)
-            self.update_scrollregion()
-        self.save_flowchart(self.current_node_id)  # save after every change
+        self.schedule_save()
 
     def snap(value):
         return round(value/GRID_SIZE)*GRID_SIZE
@@ -372,7 +383,23 @@ class FlowchartEditor(tk.Frame):
 
         self.current_item = None
         self.move_start = None
-        self.save_flowchart(self.current_node_id)  # save after every change
+        self.update_scrollregion()
+        self.schedule_save()
+
+    def schedule_save(self, delay=500):
+        if not self.current_node_id:
+            return
+        if self._save_timer is not None:
+            try:
+                self.after_cancel(self._save_timer)
+            except tk.TclError:
+                pass
+        self._save_timer = self.after(delay, self._flush_save)
+
+    def _flush_save(self):
+        self._save_timer = None
+        if self.current_node_id:
+            self.save_flowchart(self.current_node_id)
     def start_pan(self, event):
         self.pan_start = (event.x, event.y)
 
@@ -392,6 +419,7 @@ class FlowchartEditor(tk.Frame):
             base_size = self.text_fonts.get(shape, 12)
             self.canvas.itemconfig(tid, font=('Segoe UI', int(base_size*self.zoom_factor)))
         self.update_scrollregion()
+        self.schedule_save()
     
     def save_flowchart(self, node_id):
         """Save full canvas state including attached text"""

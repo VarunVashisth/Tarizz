@@ -19,12 +19,12 @@ class CodeBlockHandler:
     # Theme options
     THEMES = {
         'github_dark': {
-            'background': '#0d1117',
-            'foreground': '#c9d1d9',
-            'font': ('Courier New', 10),
-            'lmargin1': 16, 'lmargin2': 16,
-            'rmargin': 8,
-            'spacing1': 6, 'spacing3': 6,
+            'background': '#0b1220',
+            'foreground': '#d7e0ea',
+            'font': ('Cascadia Code', 10),
+            'lmargin1': 24, 'lmargin2': 24,
+            'rmargin': 18,
+            'spacing1': 10, 'spacing3': 10,
         },
         'monokai': {
             'background': '#272822',
@@ -132,6 +132,14 @@ class CodeBlockHandler:
             spacing1=style.get('spacing1', 6),
             spacing3=style.get('spacing3', 6),
             wrap='word'
+            , relief='flat', borderwidth=1,
+            tabs=('2c', '4c', '6c', '8c')
+        )
+        self.text.tag_configure(
+            'code_delimiter',
+            foreground='#6e7681', background=style['background'],
+            font=tkFont.Font(family=style['font'][0], size=max(8, style['font'][1] - 1)),
+            lmargin1=24, lmargin2=24, rmargin=18,
         )
         # Highlight sits under code styling so yellow never overwrites code colors.
         try:
@@ -158,15 +166,21 @@ class CodeBlockHandler:
             
             # Remove existing code_block tags
             self.text.tag_remove('code_block', '1.0', tk.END)
+            self.text.tag_remove('code_delimiter', '1.0', tk.END)
             
             # Find all code block matches and apply tag
             for match in re.finditer(self.CODE_BLOCK_PATTERN, content, re.DOTALL):
-                start_idx = f"1.0 + {match.start()} chars"
-                end_idx = f"1.0 + {match.end()} chars"
-                self.text.tag_add('code_block', start_idx, end_idx)
+                open_start = f"1.0 + {match.start()} chars"
+                code_start = f"1.0 + {match.start() + 3} chars"
+                code_end = f"1.0 + {match.end() - 3} chars"
+                close_end = f"1.0 + {match.end()} chars"
+                self.text.tag_add('code_delimiter', open_start, code_start)
+                self.text.tag_add('code_block', code_start, code_end)
+                self.text.tag_add('code_delimiter', code_end, close_end)
             try:
                 self.text.tag_lower('highlight')
                 self.text.tag_raise('code_block')
+                self.text.tag_raise('code_delimiter')
             except tk.TclError:
                 pass
         except tk.TclError:

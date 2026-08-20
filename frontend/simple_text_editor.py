@@ -28,6 +28,9 @@ class SimpleTextEditor:
     def create_ui(self):
         self.text_area = tk.Text(
             self.root,
+            undo=True,
+            autoseparators=True,
+            maxundo=-1,
             bg='#1a1a1a',
             fg='#e0e0e0',
             insertbackground='#ffffff',
@@ -67,6 +70,79 @@ class SimpleTextEditor:
         self.text_area.bind('<Control-3>', self.make_normal)
         # Font change hotkey example (Ctrl+Shift+F)
         self.text_area.bind('<Control-Shift-F>', self.change_font)
+        # Complete the standard editor keyboard experience.  Explicit bindings
+        # keep this consistent across Tk versions and operating systems.
+        self.text_area.bind('<Control-z>', self._undo)
+        self.text_area.bind('<Control-Z>', self._undo)
+        self.text_area.bind('<Control-y>', self._redo)
+        self.text_area.bind('<Control-Y>', self._redo)
+        self.text_area.bind('<Control-Shift-z>', self._redo)
+        self.text_area.bind('<Control-Shift-Z>', self._redo)
+        self.text_area.bind('<Control-Left>', lambda e: self._move_word(-1, False))
+        self.text_area.bind('<Control-Right>', lambda e: self._move_word(1, False))
+        self.text_area.bind('<Control-Shift-Left>', lambda e: self._move_word(-1, True))
+        self.text_area.bind('<Control-Shift-Right>', lambda e: self._move_word(1, True))
+        self.text_area.bind('<Control-BackSpace>', lambda e: self._delete_word(-1))
+        self.text_area.bind('<Control-Delete>', lambda e: self._delete_word(1))
+
+    def _undo(self, event=None):
+        try:
+            self.text_area.edit_undo()
+        except tk.TclError:
+            pass
+        return 'break'
+
+    def _redo(self, event=None):
+        try:
+            self.text_area.edit_redo()
+        except tk.TclError:
+            pass
+        return 'break'
+
+    def _move_word(self, direction, extend_selection):
+        text = self.text_area
+        current = text.index('insert')
+        target = self._word_target(direction)
+
+        if extend_selection:
+            if not text.tag_ranges('sel'):
+                text.mark_set('anchor', current)
+            text.tag_remove('sel', '1.0', 'end')
+            anchor = text.index('anchor')
+            text.tag_add('sel', min(anchor, target, key=lambda i: text.count('1.0', i, 'chars')[0]),
+                         max(anchor, target, key=lambda i: text.count('1.0', i, 'chars')[0]))
+        else:
+            text.tag_remove('sel', '1.0', 'end')
+        text.mark_set('insert', target)
+        text.see('insert')
+        return 'break'
+
+    def _word_target(self, direction):
+        """Return a word boundary using character offsets, avoiding Tk's
+        platform-dependent backwards-regexp behaviour."""
+        text = self.text_area
+        current = text.index('insert')
+        content = text.get('1.0', 'end-1c')
+        offset = text.count('1.0', current, 'chars')[0]
+        if direction < 0:
+            prefix = content[:offset].rstrip()
+            match = re.search(r'\w+\W*$', prefix, re.UNICODE)
+            new_offset = match.start() if match else 0
+        else:
+            suffix = content[offset:]
+            match = re.search(r'(?:\w+\W*|\W+)(?=\w)|\w+$', suffix, re.UNICODE)
+            new_offset = offset + (match.end() if match else len(suffix))
+        return text.index(f'1.0 + {new_offset} chars')
+
+    def _delete_word(self, direction):
+        text = self.text_area
+        if text.tag_ranges('sel'):
+            text.delete('sel.first', 'sel.last')
+        else:
+            current = text.index('insert')
+            target = self._word_target(direction)
+            text.delete(target, current) if direction < 0 else text.delete(current, target)
+        return 'break'
 
     def select_all(self, event=None):
         self.text_area.tag_add('sel', '1.0', 'end-1c')

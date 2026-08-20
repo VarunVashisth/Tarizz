@@ -90,7 +90,10 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             export_btn_style['bg'] = '#0078d4'
             export_btn_style['fg'] = '#ffffff'
             export_btn_style['activebackground'] = '#005a9e'
-            tk.Button(btn_frame, text="📄 Export to PDF", command=self.export_project, **export_btn_style).pack(fill='x', pady=2)
+            export_btn_style['font'] = ('Segoe UI', 10, 'bold')
+            export_btn_style['pady'] = 9
+            tk.Button(btn_frame, text="Export Documentation PDF", command=self.export_project,
+                      **export_btn_style).pack(fill='x', pady=(2, 5), padx=4)
 
             # Editor container
             self.editor_container = ttk.Frame(self.root)
@@ -579,6 +582,11 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         label.image = photo
                         label.bind('<Button-1>', lambda e, l=label, i=img: start_resize(e, l, i))
                         label.bind('<B1-Motion>', lambda e, l=label, i=img: do_resize(e, l, i))
+                        label.bind('<Double-Button-1>', lambda e, fp=file_path: play_video(fp, parent=self.root))
+                        image_menu = tk.Menu(label, tearoff=0, bg='#222', fg='#ddd')
+                        image_menu.add_command(label="Open image", command=lambda fp=file_path: play_video(fp, parent=self.root))
+                        image_menu.add_command(label="Download image…", command=lambda fp=file_path: download_file(fp))
+                        label.bind('<Button-3>', lambda e, m=image_menu: m.tk_popup(e.x_root, e.y_root))
                     except:
                         label = tk.Label(text, text="[Image Error]", bg='red', fg='white')
 
@@ -603,9 +611,16 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         bg_label.place(relx=0.5, rely=0.5, anchor='center')
 
 
-                    tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
+                    play_icon = tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117', cursor='hand2')
+                    play_icon.place(relx=0.5, rely=0.5, anchor='center')
+                    video_download = tk.Label(thumb_frame, text="  ↓  Download  ", font=('Segoe UI', 9, 'bold'),
+                                              fg='white', bg='#1677d2', cursor='hand2')
+                    video_download.place(relx=1.0, rely=1.0, anchor='se', x=-10, y=-10)
+                    video_download.bind('<Button-1>', lambda e, fp=file_path: (download_file(fp), 'break'))
                     # Click to play (whole frame)
                     thumb_frame.bind('<Button-1>', lambda e, fp=file_path: play_video(fp))
+                    bg_label.bind('<Button-1>', lambda e, fp=file_path: play_video(fp, parent=self.root))
+                    play_icon.bind('<Button-1>', lambda e, fp=file_path: play_video(fp, parent=self.root))
 
 
 
@@ -650,6 +665,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     else:
                         print("[DOC THUMB] Non-PDF doc → using fallback")
                     
+                    preview_text = original_filename[:24] + "…" if len(original_filename) > 24 else original_filename
                     # Label with thumbnail or fallback
                     if img_tk:
                         doc_label = tk.Label(doc_frame, image=img_tk, bg='#1a1a2e')
@@ -670,13 +686,14 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     doc_label.pack(pady=10, padx=10, expand=True, fill='both')
                     
                     # Download icon top-right with hover
-                    dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
-                                       fg='#88ff88', bg='#1a1a2e')
+                    dl_icon = tk.Label(doc_frame, text="  ↓  Download  ", font=('Segoe UI', 9, 'bold'),
+                                       fg='white', bg='#1677d2', cursor='hand2', padx=5, pady=3)
                     dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
 
                     
     
                     dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
+                    doc_label.bind('<Double-Button-1>', lambda e, fp=file_path: play_video(fp, parent=self.root))
 
                     label = doc_frame
 
@@ -774,6 +791,11 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         label.image = photo
                         label.bind('<Button-1>', lambda e, l=label, i=img: start_resize(e, l, i))
                         label.bind('<B1-Motion>', lambda e, l=label, i=img: do_resize(e, l, i))
+                        label.bind('<Double-Button-1>', lambda e, fp=file_path: play_video(fp, parent=self.root))
+                        image_menu = tk.Menu(label, tearoff=0, bg='#222', fg='#ddd')
+                        image_menu.add_command(label="Open image", command=lambda fp=file_path: play_video(fp, parent=self.root))
+                        image_menu.add_command(label="Download image…", command=lambda fp=file_path: download_file(fp))
+                        label.bind('<Button-3>', lambda e, m=image_menu: m.tk_popup(e.x_root, e.y_root))
                     except Exception as e:
                         print(f"[Image fail] {e}")
                         label = tk.Label(text, text="[Broken Image]", bg='red', fg='white')
@@ -801,7 +823,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     bg_label.place(relx=0.5, rely=0.5, anchor='center')
 
 
-                    tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117').place(relx=0.5, rely=0.5, anchor='center')
+                    play_icon = tk.Label(thumb_frame, text="▶", font=('Segoe UI', 30), fg="white", bg='#0d1117', cursor='hand2')
+                    play_icon.place(relx=0.5, rely=0.5, anchor='center')
+                    video_download = tk.Label(thumb_frame, text="  ↓  Download  ", font=('Segoe UI', 9, 'bold'),
+                                              fg='white', bg='#1677d2', cursor='hand2')
+                    video_download.place(relx=1.0, rely=1.0, anchor='se', x=-10, y=-10)
+                    video_download.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
                     # Click to play (whole frame)
 
 
@@ -820,7 +847,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     bg_label.bind('<Button-1>', on_thumb_click)
                     # Bind to play icon label
                     for child in thumb_frame.winfo_children():
-                        child.bind('<Button-1>', on_thumb_click)
+                        if child is not video_download:
+                            child.bind('<Button-1>', on_thumb_click)
 
 
 
@@ -882,11 +910,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     doc_label.pack(pady=10, padx=10, expand=True, fill='both')
                     
                     # Download icon top-right with hover
-                    dl_icon = tk.Label(doc_frame, text="↓", font=('Segoe UI', 16, 'bold'),
-                                       fg='#88ff88', bg='#1a1a2e')
+                    dl_icon = tk.Label(doc_frame, text="  ↓  Download  ", font=('Segoe UI', 9, 'bold'),
+                                       fg='white', bg='#1677d2', cursor='hand2', padx=5, pady=3)
                     dl_icon.place(relx=1.0, rely=0.0, anchor='ne', x=-10, y=10)
 
                     dl_icon.bind('<Button-1>', lambda e, fp=file_path: download_file(fp))
+                    doc_label.bind('<Double-Button-1>', lambda e, fp=file_path: play_video(fp, parent=self.root))
 
                     label = doc_frame
  
@@ -932,7 +961,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     print(f"Resize failed: {e}")
 
             def play_video(file_path , parent=None):
-                """Reliable cross-platform video playback using system default"""
+                """Open any media file with the operating system's default app."""
                 
                 file_path = os.path.abspath(file_path)
                 print(f"[PLAY VIDEO] Attempting to play: {file_path}")
@@ -943,7 +972,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             
                 try:
                     if sys.platform.startswith('win'):
-                        os.startfile(file_path)
+                        os.startfile(os.path.normpath(file_path))
                         print("[PLAY] Windows - os.startfile used")
             
                     elif sys.platform.startswith('linux'):
@@ -971,7 +1000,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 import shutil
     
                 if not os.path.exists(file_path):
-                    print(f"File not found for download: {file_path}")
+                    messagebox.showerror("File Not Found", f"This media file is missing:\n{file_path}", parent=self.root)
                     return
     
                 default_name = os.path.basename(file_path)
@@ -985,9 +1014,9 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 if dest_path:
                     try:
                         shutil.copy2(file_path, dest_path)
-                        print(f"File saved to: {dest_path}")
+                        messagebox.showinfo("Download complete", f"Saved to:\n{dest_path}", parent=self.root)
                     except Exception as e:
-                        print(f"Download failed: {e}")
+                        messagebox.showerror("Download failed", str(e), parent=self.root)
 
 
             code_handler = CodeBlockHandler(text, theme='github_dark')
