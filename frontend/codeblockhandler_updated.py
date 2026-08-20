@@ -133,6 +133,12 @@ class CodeBlockHandler:
             spacing3=style.get('spacing3', 6),
             wrap='word'
         )
+        # Highlight sits under code styling so yellow never overwrites code colors.
+        try:
+            self.text.tag_lower('highlight')
+        except tk.TclError:
+            pass
+        self.text.tag_raise('code_block')
     
     def change_theme(self, theme):
         """Change the code block theme at runtime."""
@@ -158,5 +164,10 @@ class CodeBlockHandler:
                 start_idx = f"1.0 + {match.start()} chars"
                 end_idx = f"1.0 + {match.end()} chars"
                 self.text.tag_add('code_block', start_idx, end_idx)
+            try:
+                self.text.tag_lower('highlight')
+                self.text.tag_raise('code_block')
+            except tk.TclError:
+                pass
         except tk.TclError:
             pass

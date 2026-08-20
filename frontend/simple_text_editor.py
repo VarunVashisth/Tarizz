@@ -60,7 +60,7 @@ class SimpleTextEditor:
         # Text formatting
         self.text_area.bind('<Control-a>', self.select_all)
         self.text_area.bind('<Control-b>', self.make_bold)
-        self.text_area.bind('<Control-i>', self.upload_image)  # Changed to image upload
+        self.text_area.bind('<Control-i>', self.make_italic)
         self.text_area.bind('<Control-u>', self.make_underline)
         self.text_area.bind('<Control-1>', self.make_heading)
         self.text_area.bind('<Control-2>', self.make_subheading)

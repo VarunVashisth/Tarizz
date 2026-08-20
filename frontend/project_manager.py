@@ -10,10 +10,10 @@ import io
 import subprocess
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend.database import (
-    create_node, get_nodes, get_all_nodes_for_project,
+    create_node, get_nodes, get_all_nodes_for_project, get_node,
     rename_node, delete_node,
     save_subpage, load_subpage,
-    save_media, get_media_for_node
+    save_media, get_media_for_node, import_media_file, delete_media,
 )
 from flowchart import FlowchartEditor
 from PIL import Image, ImageTk ,ImageDraw
@@ -98,13 +98,77 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
             self.current_editor = None
             self.current_editor_frame = None
-            self.current_node_id = None  # Track which node is open
-            
+            self.current_node_id = None
+            self.text = None
+            self.formatter = None
+            self._save_timer = None
+
             # Build tree from database
             self.root_item = self.tree.insert("", "end", text="Project", open=True)
             self.node_id_to_tree_id = {}  # Map database node_id to tree item_id
             self.tree_id_to_node_id = {}  # Reverse mapping
             self.load_tree()
+
+        @staticmethod
+        def validate_item_name(name):
+            if name is None:
+                return False, "Name cannot be empty."
+            name = name.strip()
+            if not name:
+                return False, "Name cannot be empty."
+            if len(name) > 80:
+                return False, "Name cannot exceed 80 characters."
+            return True, name
+
+        def cleanup_orphaned_tags(self, text=None):
+            text = text or self.text
+            if not text:
+                return
+            preserve = {'sel', 'sel.last', 'bold', 'italic', 'underline', 'highlight', 'code_block'}
+            for tag in text.tag_names():
+                if tag in preserve:
+                    continue
+                if not text.tag_ranges(tag):
+                    try:
+                        text.tag_delete(tag)
+                    except tk.TclError:
+                        pass
+
+        def reset_text_widget_state(self, text_widget):
+            if not text_widget:
+                return
+            for tag in text_widget.tag_names():
+                if tag not in ('sel', 'sel.last'):
+                    try:
+                        text_widget.tag_delete(tag)
+                    except tk.TclError:
+                        pass
+            try:
+                text_widget.tag_remove('sel', '1.0', tk.END)
+            except tk.TclError:
+                pass
+            try:
+                text_widget.mark_set(tk.INSERT, '1.0')
+                text_widget.edit_reset()
+                text_widget.see('1.0')
+                text_widget.delete('1.0', tk.END)
+            except tk.TclError:
+                pass
+
+        def setup_text_widget_bindings(self, text):
+            def on_delete_key(event):
+                self.root.after(10, lambda: self.cleanup_orphaned_tags(text))
+
+            text.bind('<KeyRelease-Delete>', on_delete_key, add='+')
+            text.bind('<KeyRelease-BackSpace>', on_delete_key, add='+')
+
+            def on_cut(event):
+                text.event_generate('<<Cut>>')
+                self.root.after(10, lambda: self.cleanup_orphaned_tags(text))
+                return 'break'
+
+            text.bind('<Control-x>', on_cut)
+            text.bind('<Control-X>', on_cut)
 
         def load_tree(self):
             """Load the entire tree structure from database"""
@@ -149,15 +213,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             node_id = self.tree_id_to_node_id.get(tree_id)
             if not node_id:
                 return None, None
-            
-            # Fetch node from database
-            from backend.database import _db_instance
-            conn = _db_instance._connect()
             try:
-                node = conn.execute("SELECT * FROM nodes WHERE id=?;", (node_id,)).fetchone()
-                return dict(node) if node else None, tree_id
-            finally:
-                conn.close()
+                node = get_node(node_id)
+                return node, tree_id
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not load item:\n{e}", parent=self.root)
+                return None, None
 
         def add_folder(self):
             """Add a folder node"""
@@ -175,8 +236,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     return
             
             name = simpledialog.askstring("Folder Name", "Enter folder name:", parent=self.root)
-            if not name:
+            ok, name_or_msg = self.validate_item_name(name)
+            if not ok:
+                if name is not None:
+                    messagebox.showerror("Invalid Name", name_or_msg, parent=self.root)
                 return
+            name = name_or_msg
             
             try:
                 db_node_id = create_node(self.project_id, parent_node_id, 'folder', name)
@@ -210,8 +275,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     return
             
             name = simpledialog.askstring("Subpage Name", "Enter subpage name:", parent=self.root)
-            if not name:
+            ok, name_or_msg = self.validate_item_name(name)
+            if not ok:
+                if name is not None:
+                    messagebox.showerror("Invalid Name", name_or_msg, parent=self.root)
                 return
+            name = name_or_msg
             
             try:
                 db_node_id = create_node(self.project_id, parent_node_id, 'subpage', name)
@@ -220,7 +289,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 self.node_id_to_tree_id[db_node_id] = tree_id
                 self.tree_id_to_node_id[tree_id] = db_node_id
                 # Initialize empty content
-                save_subpage(db_node_id, "")
+                save_subpage(db_node_id, {"content": "", "tags": {}, "formatting": []})
             except ValueError as e:
                 messagebox.showerror("Error", str(e),parent=self.root)
 
@@ -247,8 +316,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     return
             
             name = simpledialog.askstring("Flowchart Name", "Enter flowchart name:", parent=self.root)
-            if not name:
+            ok, name_or_msg = self.validate_item_name(name)
+            if not ok:
+                if name is not None:
+                    messagebox.showerror("Invalid Name", name_or_msg, parent=self.root)
                 return
+            name = name_or_msg
             
             try:
                 db_node_id = create_node(self.project_id, parent_node_id, 'flowchart', name)
@@ -256,28 +329,37 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 self.node_id_to_tree_id[db_node_id] = tree_id
                 self.tree_id_to_node_id[tree_id] = db_node_id
             except ValueError as e:
-                messagebox.showerror("Error", str(e),)
+                messagebox.showerror("Error", str(e), parent=self.root)
 
         def rename_item(self):
             """Rename selected node"""
             node_info, tree_id = self.get_selected_node_info()
             if not node_info:
-                messagebox.showwarning("Warning", "Please select an item to rename",)
+                messagebox.showwarning("Warning", "Please select an item to rename", parent=self.root)
                 return
             
             old_name = node_info['name']
-            new_name = simpledialog.askstring("Rename", f"Enter new name for '{old_name}':")
-            if not new_name or new_name == old_name:
+            new_name = simpledialog.askstring("Rename", f"Enter new name for '{old_name}':", parent=self.root)
+            ok, name_or_msg = self.validate_item_name(new_name)
+            if not ok:
+                if new_name is not None:
+                    messagebox.showerror("Invalid Name", name_or_msg, parent=self.root)
+                return
+            new_name = name_or_msg
+            if new_name == old_name:
                 return
             
-            rename_node(node_info['id'], new_name)
-            self.tree.item(tree_id, text=new_name)
+            try:
+                rename_node(node_info['id'], new_name)
+                self.tree.item(tree_id, text=new_name)
+            except Exception as e:
+                messagebox.showerror("Rename Failed", str(e), parent=self.root)
 
         def delete_item(self):
             """Delete selected node and all children"""
             node_info, tree_id = self.get_selected_node_info()
             if not node_info:
-                messagebox.showwarning("Warning", "Please select an item to delete",)
+                messagebox.showwarning("Warning", "Please select an item to delete", parent=self.root)
                 return
             
             confirm = messagebox.askyesno("Confirm Delete",
@@ -387,61 +469,51 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             self.current_node_id = node_id
         
             text = editor.text_area
-      
+            self.text = text
+            self.reset_text_widget_state(text)
+
             formatter = TextFormatter(text)
-            
-            text.bind('<Control-b>', lambda e: (formatter.toggle_bold(), 'break'))
-            text.bind('<Control-i>', lambda e: (formatter.toggle_italic(), 'break'))
-            text.bind('<Control-u>', lambda e: (formatter.toggle_underline(), 'break'))
-            text.bind('<Control-h>', lambda e: (formatter.toggle_highlight(), 'break'))
+            self.formatter = formatter
+            self.setup_text_widget_bindings(text)
 
+            def _fmt(op):
+                def handler(event=None):
+                    op()
+                    return 'break'
+                return handler
 
-            # Load content
-            dump = load_subpage(node_id)
+            text.bind('<Control-b>', _fmt(formatter.toggle_bold))
+            text.bind('<Control-B>', _fmt(formatter.toggle_bold))
+            text.bind('<Control-i>', _fmt(formatter.toggle_italic))
+            text.bind('<Control-I>', _fmt(formatter.toggle_italic))
+            text.bind('<Control-u>', _fmt(formatter.toggle_underline))
+            text.bind('<Control-U>', _fmt(formatter.toggle_underline))
+            text.bind('<Control-h>', _fmt(formatter.toggle_highlight))
+            text.bind('<Control-H>', _fmt(formatter.toggle_highlight))
+            text.bind('<Control-Shift-H>', _fmt(formatter.toggle_highlight))
+
+            dump = None
+            try:
+                dump = load_subpage(node_id)
+            except Exception as e:
+                messagebox.showerror(
+                    "Load Failed",
+                    f"Could not load this page.\n{e}",
+                    parent=self.root,
+                )
+                dump = {"content": "", "tags": {}}
+
             tags_data = {}
             if dump:
-                text.delete("1.0", "end")
-                
-                # Handle both old string format and new dict format
                 if isinstance(dump, str):
                     content = dump
                     tags_data = {}
-                    print("[DEBUG] Loaded legacy string content")
                 else:
                     content = dump.get('content', '')
-                    tags_data = dump.get('tags', {})
-                    print(f"[DEBUG] Loaded dict - content len: {len(content)}")
-                
-                text.insert("1.0", content)
-    
-                # Apply tags if present
-            for tag_name, ranges_list in tags_data.items():
-                # Configure font/size tags on load if needed
-                if tag_name.startswith('font_'):
-                    family = tag_name.replace('font_', '').replace('_', ' ')
-                    text.tag_configure(tag_name, font=(family, text.cget('font').split()[1]))
-                elif tag_name.startswith('size_'):
-                    try:
-                        size = int(tag_name.replace('size_', ''))
-                        current_font = text.cget('font')
-                        if isinstance(current_font, str):
-                            family = current_font.split()[0]
-                        else:
-                            family = current_font[0] if current_font else 'Segoe UI'
-                        text.tag_configure(tag_name, font=(family, size))  # size is int, not string
-                    except (tk.TclError, ValueError, IndexError) as e:
-                        print(f"[WARN] Failed to configure {tag_name}: {e}")
-                        pass
-
-                # Apply ranges
-                for start_end in ranges_list:
-                    try:
-                        start, end = start_end
-                        text.tag_add(tag_name, start, end)
-                    except tk.TclError:
-                        pass  # ignore invalid ranges
-                        # Load media
-            media_list = get_media_for_node(node_id)
+                    tags_data = dump.get('tags', {}) or {}
+                if content:
+                    text.insert("1.0", content)
+                formatter.apply_tags_map(tags_data)
             
             def parse_index(idx):
                 if not idx:
