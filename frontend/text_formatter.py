@@ -23,8 +23,10 @@ class TextFormatter:
         self.default_family = 'Segoe UI'
         self.default_size = 11
         self._strip_highlight = False
+        self._typing_font = None  # sticky format for newly typed text when nothing is selected
         self.setup_base_tags()
         self._bind_highlight_guard()
+        self._bind_typing_font_reset()
 
     def setup_base_tags(self):
         # Marker tags: no font, so they never override size/family.
@@ -49,8 +51,14 @@ class TextFormatter:
         if event.state & 0x4:  # Control
             return
         if event.keysym in (
-            'BackSpace', 'Delete', 'Left', 'Right', 'Up', 'Down',
-            'Home', 'End', 'Return', 'Tab', 'Shift_L', 'Shift_R',
+            'Left', 'Right', 'Up', 'Down', 'Home', 'End',
+        ):
+            # Cursor moved away from where the sticky typing font was set;
+            # stop applying it so typing elsewhere uses that spot's own format.
+            self._typing_font = None
+            return
+        if event.keysym in (
+            'BackSpace', 'Delete', 'Return', 'Tab', 'Shift_L', 'Shift_R',
             'Control_L', 'Control_R', 'Alt_L', 'Alt_R', 'Escape',
         ):
             return
@@ -69,6 +77,9 @@ class TextFormatter:
         if self._strip_highlight:
             self.text.after_idle(self._strip_new_highlight)
 
+        if self._typing_font is not None:
+            self.text.after_idle(self._apply_typing_font_to_last_char)
+
     def _strip_new_highlight(self):
         if not self._strip_highlight:
             return
@@ -79,6 +90,52 @@ class TextFormatter:
             self.text.tag_remove('highlight', start, insert)
         except tk.TclError:
             pass
+
+    def _bind_typing_font_reset(self):
+        """Clicking elsewhere should drop the sticky typing font, so typing
+        there picks up that location's own formatting instead."""
+        self.text.bind('<Button-1>', self._on_click_reset_typing_font, add='+')
+
+    def _on_click_reset_typing_font(self, event=None):
+        self._typing_font = None
+
+    def _apply_typing_font_to_last_char(self):
+        """Apply the sticky 'typing font' (set via apply_font_family/size or
+        toggle_bold/toggle_italic while nothing was selected) to the character
+        that was just typed."""
+        if self._typing_font is None:
+            return
+        try:
+            insert = self.text.index(tk.INSERT)
+            start = self.text.index(f'{insert}-1c')
+            fmt = self._typing_font
+            self._apply_combined_font(
+                start, insert, fmt['family'], fmt['size'], fmt['weight'], fmt['slant']
+            )
+        except tk.TclError:
+            pass
+
+    def _current_typing_base(self):
+        """Formatting to build on when changing the sticky typing font
+        (no active selection)."""
+        if self._typing_font is not None:
+            return dict(self._typing_font)
+        try:
+            insert = self.text.index(tk.INSERT)
+            current = self.get_current_formatting(insert)
+            return {
+                'family': current['family'],
+                'size': current['size'],
+                'weight': current['weight'],
+                'slant': current['slant'],
+            }
+        except tk.TclError:
+            return {
+                'family': self.default_family,
+                'size': self.default_size,
+                'weight': 'normal',
+                'slant': 'roman',
+            }
 
     def get_current_formatting(self, index):
         tags = self.text.tag_names(index)
@@ -154,10 +211,16 @@ class TextFormatter:
         self.text.tag_configure(tag_name, font=font_obj)
         self.text.tag_add(tag_name, sel_start, sel_end)
 
+        # font_<family> / size_<size> are lightweight markers only (used by
+        # get_current_formatting()'s fallback parsing and legacy saved data).
+        # They must NOT carry their own 'font' option: they're shared across
+        # every range of that family/size, and reconfiguring a shared tag's
+        # font here would repaint every other range using that same tag
+        # (e.g. changing font on a new sentence at the same size would also
+        # retroactively change a previous sentence at that size). The unique
+        # fmt_ tag above is what actually renders the font.
         font_tag = f"font_{family.replace(' ', '_')}"
         size_tag = f"size_{size}"
-        self.text.tag_configure(font_tag, font=font_obj)
-        self.text.tag_configure(size_tag, font=font_obj)
         self.text.tag_add(font_tag, sel_start, sel_end)
         self.text.tag_add(size_tag, sel_start, sel_end)
 
@@ -191,6 +254,10 @@ class TextFormatter:
     def apply_font_family(self, family):
         sel = self._selection()
         if not sel:
+            # No selection: remember this as the font for newly typed text
+            base = self._current_typing_base()
+            base['family'] = family
+            self._typing_font = base
             return
         sel_start, sel_end = sel
         current = self.get_current_formatting(sel_start)
@@ -202,6 +269,10 @@ class TextFormatter:
     def apply_font_size(self, size):
         sel = self._selection()
         if not sel:
+            # No selection: remember this as the size for newly typed text
+            base = self._current_typing_base()
+            base['size'] = int(size)
+            self._typing_font = base
             return
         sel_start, sel_end = sel
         current = self.get_current_formatting(sel_start)
@@ -213,6 +284,10 @@ class TextFormatter:
     def toggle_bold(self):
         sel = self._selection()
         if not sel:
+            # No selection: toggle the sticky bold state for newly typed text
+            base = self._current_typing_base()
+            base['weight'] = 'normal' if base['weight'] == 'bold' else 'bold'
+            self._typing_font = base
             return
         sel_start, sel_end = sel
         current = self.get_current_formatting(sel_start)
@@ -225,6 +300,10 @@ class TextFormatter:
     def toggle_italic(self):
         sel = self._selection()
         if not sel:
+            # No selection: toggle the sticky italic state for newly typed text
+            base = self._current_typing_base()
+            base['slant'] = 'roman' if base['slant'] == 'italic' else 'italic'
+            self._typing_font = base
             return
         sel_start, sel_end = sel
         current = self.get_current_formatting(sel_start)
@@ -258,7 +337,7 @@ class TextFormatter:
             self.text.tag_lower('highlight')
         self._clear_selection(sel_end)
 
-    def configure_saved_tag(self, tag_name):
+    def configure_saved_tag(self, tag_name, has_fmt_tags=False):
         """Reconfigure a tag name loaded from storage."""
         parsed = self._parse_fmt_tag(tag_name)
         if parsed:
@@ -269,12 +348,19 @@ class TextFormatter:
             )
             return
         if tag_name.startswith('font_'):
+            if has_fmt_tags:
+                # A fmt_ tag already carries the real font for this range;
+                # keep font_/size_ as plain markers so they don't fight with
+                # it for rendering priority (see _apply_combined_font).
+                return
             family = tag_name[5:].replace('_', ' ')
             self.text.tag_configure(
                 tag_name,
                 font=tkFont.Font(family=family, size=self.default_size),
             )
         elif tag_name.startswith('size_'):
+            if has_fmt_tags:
+                return
             try:
                 size = int(tag_name[5:])
             except ValueError:
@@ -292,10 +378,11 @@ class TextFormatter:
         """Restore {tag: [[start, end], ...]} from storage."""
         if not tags_data:
             return
+        has_fmt_tags = any(t.startswith('fmt_') for t in tags_data)
         for tag_name, ranges_list in tags_data.items():
             if tag_name in ('sel', 'sel.last'):
                 continue
-            self.configure_saved_tag(tag_name)
+            self.configure_saved_tag(tag_name, has_fmt_tags)
             for start_end in ranges_list:
                 try:
                     start, end = start_end

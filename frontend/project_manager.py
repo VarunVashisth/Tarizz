@@ -1,6 +1,7 @@
 # project_manager.py
 import tkinter as tk
 from tkinter import PhotoImage, ttk, simpledialog, messagebox , filedialog
+from tkinter import font as tkFont
 
 import cv2
 from simple_text_editor import create_text_editor
@@ -710,8 +711,22 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             tk.Button(toolbar, text="Document", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=5)
 
             # Font family selector
-            fonts = ['Segoe UI', 'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana']
-            font_var = tk.StringVar(value='Segoe UI')  # default
+            # Populate directly from the fonts actually installed on this OS
+            # (no hardcoded/curated list — avoids offering fonts that don't exist
+            # on the machine, which silently fall back to a default font in Tk).
+            try:
+                fonts = sorted(
+                    {f for f in tkFont.families() if f and not f.startswith('@')},
+                    key=str.lower
+                )
+            except tk.TclError:
+                fonts = ['TkDefaultFont']
+
+            if not fonts:
+                fonts = ['TkDefaultFont']
+
+            _default_font = 'Segoe UI' if 'Segoe UI' in fonts else fonts[0]
+            font_var = tk.StringVar(value=_default_font)  # default
 
             font_menu = tk.OptionMenu(toolbar, font_var, *fonts,
                                       command=lambda f: apply_font_family(f))
@@ -741,6 +756,28 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             size_menu['menu'].config(**menu_items_style)
             
             size_menu.pack(side='left', padx=4)
+
+            # Bold / Italic / Underline / Highlight toolbar buttons
+            # (reuse the same _fmt wrapper already used for the Ctrl+B/I/U/H shortcuts)
+            style_btn_style = btn_style.copy()
+            style_btn_style['padx'] = 10
+
+            tk.Button(toolbar, text="B", command=lambda: _fmt(formatter.toggle_bold)(),
+                      font=('Segoe UI', 10, 'bold'),
+                      **{k: v for k, v in style_btn_style.items() if k != 'font'}
+                      ).pack(side='left', padx=2)
+            tk.Button(toolbar, text="I", command=lambda: _fmt(formatter.toggle_italic)(),
+                      font=('Segoe UI', 10, 'italic'),
+                      **{k: v for k, v in style_btn_style.items() if k != 'font'}
+                      ).pack(side='left', padx=2)
+            tk.Button(toolbar, text="U", command=lambda: _fmt(formatter.toggle_underline)(),
+                      font=('Segoe UI', 10, 'underline'),
+                      **{k: v for k, v in style_btn_style.items() if k != 'font'}
+                      ).pack(side='left', padx=2)
+            tk.Button(toolbar, text="H", command=lambda: _fmt(formatter.toggle_highlight)(),
+                      font=('Segoe UI', 10, 'bold'),
+                      **{k: v for k, v in style_btn_style.items() if k != 'font'}
+                      ).pack(side='left', padx=(2, 5))
 
             def apply_font_family(family):
                 """Apply font family using formatter (FIXED)"""
@@ -1025,8 +1062,11 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             
             def on_key_release(event=None):
                 """Handle both code block styling and auto-save"""
-                code_handler.apply_code_block_styling(event)
-                self.schedule_save()
+                try:
+                    code_handler.apply_code_block_styling(event)
+                    self.schedule_save()
+                except tk.TclError:
+                    pass
             
             # Single binding for both code blocks and auto-save
             text.bind('<KeyRelease>', on_key_release)
@@ -1035,7 +1075,12 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             text.after(100, code_handler.apply_code_block_styling)
             
             # Separate binding for focus out
-            text.bind('<FocusOut>', lambda e: self.save_current_page())
+            def on_focus_out(e=None):
+                try:
+                    self.save_current_page()
+                except tk.TclError:
+                    pass
+            text.bind('<FocusOut>', on_focus_out)
 
             def detect_media_deletion(round=1):
                 """Check for deleted media - retry once after delay"""
@@ -1088,19 +1133,30 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             
         def schedule_save(self):
             """Debounced auto-save"""
-            if hasattr(self, '_save_timer'):
-                self.root.after_cancel(self._save_timer)
-            self._save_timer = self.root.after(1000, self.save_current_page)  # 1 sec delay
+            if getattr(self, '_save_timer', None) is not None:
+                try:
+                    self.root.after_cancel(self._save_timer)
+                except (tk.TclError, ValueError):
+                    pass
+                self._save_timer = None
+            try:
+                self._save_timer = self.root.after(1000, self.save_current_page)  # 1 sec delay
+            except tk.TclError:
+                pass
 
         def save_current_page(self):
             """Save current page content — only if it's a subpage (text editor)"""
             if not self.current_editor or not self.current_node_id:
                 return
-    
+
             # Only save text content if it's a subpage editor
             if hasattr(self.current_editor, 'text_area'):
                 text = self.current_editor.text_area
-                content = text.get("1.0", "end-1c")
+                try:
+                    content = text.get("1.0", "end-1c")
+                except tk.TclError:
+                    # Text widget no longer exists (e.g. page switched mid-save)
+                    return
                 
                 tags = {}
                 for tag_name in ['bold', 'italic', 'underline', 'highlight', 'code_block']:
