@@ -14,15 +14,18 @@ from datetime import datetime
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, PageBreak,
                                Image, Table, TableStyle, HRFlowable, Preformatted,
                                KeepTogether)
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from PIL import Image as PILImage
 import tkinter as tk
 from tkinter import filedialog, messagebox
+from urllib.parse import unquote
 
 
 class ProjectExporter:
@@ -33,6 +36,7 @@ class ProjectExporter:
         self.project_title = project_title
         self.db = db_module
         self.temp_images = []  # Track temp files for cleanup
+        self._pdf_font_cache = {}
         
     def export_to_pdf(self, output_path=None):
         """
@@ -324,12 +328,13 @@ class ProjectExporter:
         if content_data:
             if isinstance(content_data, dict):
                 content = content_data.get('content', '')
+                tags = content_data.get('tags', {}) or {}
             else:
                 content = content_data
+                tags = {}
             
             if content:
-                content = self._insert_media_markers(content, media_list)
-                story.extend(self._render_document_text(content, styles))
+                story.extend(self._render_rich_text(content, tags, styles))
             else:
                 story.append(Paragraph("<i>No content</i>", styles['Normal']))
         else:
@@ -653,6 +658,247 @@ class ProjectExporter:
                         lambda m: "<font name='Courier' color='#2563eb'>" +
                                   self._clean_text_for_pdf(m.group(0)) + "</font>", clean)
                     story.append(Paragraph(clean, styles['CustomBody']))
+        return story
+
+    def _tag_offsets(self, content, tags):
+        """Convert persisted Tk ranges into offset ranges for PDF rendering."""
+        converted = {}
+        for tag, ranges in (tags or {}).items():
+            values = []
+            for item in ranges:
+                if not isinstance(item, (list, tuple)) or len(item) != 2:
+                    continue
+                start = self._text_index_to_offset(content, item[0])
+                end = self._text_index_to_offset(content, item[1])
+                if end > start:
+                    values.append((start, end))
+            if values:
+                converted[tag] = values
+        return converted
+
+    @staticmethod
+    def _active_tags(offset, converted):
+        return {tag for tag, ranges in converted.items()
+                if any(start <= offset < end for start, end in ranges)}
+
+    def _resolve_pdf_font(self, requested, bold=False, italic=False):
+        key = (requested.lower(), bold, italic)
+        if key in self._pdf_font_cache:
+            return self._pdf_font_cache[key]
+        lowered = requested.lower()
+        fallback = 'Courier' if ('courier' in lowered or 'consol' in lowered or 'mono' in lowered) \
+            else ('Times-Roman' if ('times' in lowered or 'serif' in lowered) else 'Helvetica')
+        normalized = ''.join(ch for ch in lowered if ch.isalnum())
+        roots = [os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts'),
+                 '/usr/share/fonts', '/usr/local/share/fonts']
+        candidates = []
+        for root in roots:
+            if not os.path.isdir(root):
+                continue
+            for folder, _, files in os.walk(root):
+                for filename in files:
+                    if not filename.lower().endswith(('.ttf', '.otf')):
+                        continue
+                    stem = ''.join(ch for ch in os.path.splitext(filename)[0].lower() if ch.isalnum())
+                    if stem == normalized or stem.startswith(normalized):
+                        score = len(stem) - len(normalized)
+                        wants = ('bold' if bold else '') + ('italic' if italic else '')
+                        if wants and any(token in stem for token in (wants, 'bold', 'italic')):
+                            score -= 2
+                        candidates.append((score, os.path.join(folder, filename)))
+        if candidates:
+            try:
+                path = min(candidates, key=lambda item: item[0])[1]
+                registered = 'TarizzFont' + str(len(self._pdf_font_cache) + 1)
+                pdfmetrics.registerFont(TTFont(registered, path))
+                fallback = registered
+            except Exception:
+                pass
+        self._pdf_font_cache[key] = fallback
+        return fallback
+
+    def _font_markup(self, tags):
+        """Return ReportLab-safe opening/closing markup for character tags."""
+        family, requested, size = 'Helvetica', 'Helvetica', 11
+        bold = 'bold' in tags
+        italic = 'italic' in tags
+        for tag in tags:
+            if tag.startswith('fmt_'):
+                parts = tag.split('_')
+                if len(parts) >= 5:
+                    try:
+                        size = max(6, min(96, int(parts[-3])))
+                    except ValueError:
+                        pass
+                    bold = parts[-2] == 'bold'
+                    italic = parts[-1] == 'italic'
+                    requested = ' '.join(parts[1:-3])
+            elif tag.startswith('size_'):
+                try:
+                    size = max(6, min(96, int(tag[5:])))
+                except ValueError:
+                    pass
+            elif tag == 'inline_code':
+                requested = 'Courier'
+
+        family = self._resolve_pdf_font(requested, bold, italic)
+        embedded_style = family.startswith('TarizzFont')
+
+        attrs = [f"name='{family}'", f"size='{size}'"]
+        for tag in tags:
+            if tag.startswith('color_'):
+                attrs.append(f"color='#{tag[6:]}'")
+            elif tag.startswith('bgcolor_'):
+                attrs.append(f"backColor='#{tag[8:]}'")
+        opening = ['<font ' + ' '.join(attrs) + '>']
+        closing = ['</font>']
+        wrappers = []
+        if bold and not embedded_style:
+            wrappers.append(('b', '<b>', '</b>'))
+        if italic and not embedded_style:
+            wrappers.append(('i', '<i>', '</i>'))
+        if 'underline' in tags:
+            wrappers.append(('u', '<u>', '</u>'))
+        if 'strike' in tags:
+            wrappers.append(('strike', '<strike>', '</strike>'))
+        if 'superscript' in tags:
+            wrappers.append(('super', '<super>', '</super>'))
+        if 'subscript' in tags:
+            wrappers.append(('sub', '<sub>', '</sub>'))
+        for tag in tags:
+            if tag.startswith('link_'):
+                href = self._xml_attribute(unquote(tag[5:]))
+                wrappers.append(('link', f"<link href='{href}' color='#2563eb'>", '</link>'))
+        for _, op, cl in wrappers:
+            opening.append(op)
+            closing.insert(0, cl)
+        return ''.join(opening), ''.join(closing)
+
+    @staticmethod
+    def _font_size_for_tags(tags, default=11):
+        size = default
+        for tag in tags:
+            if tag.startswith('fmt_'):
+                try:
+                    size = int(tag.split('_')[-3])
+                except (ValueError, IndexError):
+                    pass
+            elif tag.startswith('size_'):
+                try:
+                    size = int(tag[5:])
+                except ValueError:
+                    pass
+        return max(6, min(96, size))
+
+    @staticmethod
+    def _xml_attribute(value):
+        return (str(value).replace('&', '&amp;').replace("'", '&apos;')
+                .replace('<', '&lt;').replace('>', '&gt;'))
+
+    def _render_rich_text(self, content, tags, styles):
+        """Render editor ranges into styled PDF paragraphs without flattening."""
+        converted = self._tag_offsets(content, tags)
+        story = []
+        position = 0
+        style_cache = {}
+        code_buffer = []
+
+        def flush_code():
+            if not code_buffer:
+                return
+            label = Paragraph("<font color='#7dd3fc'><b>CODE</b></font>", styles['SectionLabel'])
+            code = Preformatted(self._clean_text_for_pdf('\n'.join(code_buffer)), styles['CodeBlock'])
+            card = Table([[label], [code]], colWidths=[6.15 * inch])
+            card.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#0b1220')),
+                ('BOX', (0, 0), (-1, -1), 0.7, colors.HexColor('#334155')),
+                ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#1e3a5f')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ]))
+            story.extend([Spacer(1, 6), card, Spacer(1, 9)])
+            code_buffer.clear()
+
+        for raw_line in content.splitlines(True):
+            line = raw_line.rstrip('\r\n')
+            if not line:
+                in_code = any(start <= position < end for start, end in converted.get('code_block', []))
+                if in_code:
+                    code_buffer.append('')
+                    position += len(raw_line)
+                    continue
+                flush_code()
+                story.append(Spacer(1, 5))
+                position += len(raw_line)
+                continue
+
+            line_tags = self._active_tags(position, converted)
+            line_end_offset = position + len(line)
+            is_code_line = any(start < line_end_offset and end > position
+                               for start, end in converted.get('code_block', []))
+            if is_code_line or "'''" in line:
+                code_line = line.replace("'''", '')
+                if code_line:
+                    code_buffer.append(code_line)
+                position += len(raw_line)
+                continue
+            flush_code()
+            base_name = 'CustomBody'
+            for candidate, pdf_style in (('style_title', 'CustomTitle'),
+                                         ('style_heading1', 'CustomHeading1'),
+                                         ('style_heading2', 'CustomHeading2'),
+                                         ('style_heading3', 'CustomHeading3')):
+                if candidate in line_tags:
+                    base_name = pdf_style
+                    break
+            alignment = TA_LEFT
+            if 'align_center' in line_tags:
+                alignment = TA_CENTER
+            elif 'align_right' in line_tags:
+                alignment = TA_RIGHT
+            elif 'align_justify' in line_tags:
+                alignment = TA_JUSTIFY
+
+            line_sizes = [self._font_size_for_tags(self._active_tags(position + i, converted))
+                          for i in range(len(line))]
+            max_line_size = max(line_sizes, default=styles[base_name].fontSize)
+            dynamic_leading = max(styles[base_name].leading or styles[base_name].fontSize * 1.2,
+                                  max_line_size * 1.25)
+            cache_key = (base_name, alignment, 'quote' in line_tags, dynamic_leading)
+            if cache_key not in style_cache:
+                style_cache[cache_key] = ParagraphStyle(
+                    'Rich_' + str(len(style_cache)), parent=styles[base_name],
+                    alignment=alignment,
+                    leading=dynamic_leading,
+                    leftIndent=22 if 'quote' in line_tags else styles[base_name].leftIndent,
+                    borderColor=colors.HexColor('#94a3b8') if 'quote' in line_tags else None,
+                    borderWidth=1 if 'quote' in line_tags else 0,
+                    borderPadding=6 if 'quote' in line_tags else 0,
+                )
+
+            boundaries = {0, len(line)}
+            for ranges in converted.values():
+                for start, end in ranges:
+                    if start < position + len(line) and end > position:
+                        boundaries.add(max(0, start - position))
+                        boundaries.add(min(len(line), end - position))
+            ordered = sorted(boundaries)
+            markup = []
+            for left, right in zip(ordered, ordered[1:]):
+                if right <= left:
+                    continue
+                active = self._active_tags(position + left, converted)
+                opening, closing = self._font_markup(active)
+                markup.append(opening + self._clean_text_for_pdf(line[left:right]) + closing)
+            story.append(Paragraph(''.join(markup) or '&nbsp;', style_cache[cache_key]))
+            position += len(raw_line)
+
+        flush_code()
+
+        if content and not content.endswith(('\n', '\r')) and not story:
+            story.append(Paragraph(self._clean_text_for_pdf(content), styles['CustomBody']))
         return story
     
     def _clean_text_for_pdf(self, text):

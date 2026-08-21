@@ -18,9 +18,11 @@ _media_dir = None
 
 
 def set_db_path(path: str):
-    """Set the database path and drop any cached connection."""
-    global _db_path, _db_instance
-    _db_path = path
+    """Set the active vault database and its matching media directory."""
+    global _db_path, _db_instance, _media_dir
+    _db_path = os.path.abspath(path)
+    _media_dir = os.path.join(os.path.dirname(_db_path), "media")
+    os.makedirs(_media_dir, exist_ok=True)
     _db_instance = None
     Database._instance = None
 
@@ -34,7 +36,12 @@ def set_media_dir(path: str):
 def get_media_dir() -> str:
     global _media_dir
     if not _media_dir:
-        raise RuntimeError("Media directory not set. Please authenticate first.")
+        # Backward-compatible recovery for sessions initialized by older code.
+        if _db_path:
+            _media_dir = os.path.join(os.path.dirname(os.path.abspath(_db_path)), "media")
+            os.makedirs(_media_dir, exist_ok=True)
+        else:
+            raise RuntimeError("Media directory not set. Please authenticate first.")
     return _media_dir
 
 

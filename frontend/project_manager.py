@@ -1,6 +1,6 @@
 # project_manager.py
 import tkinter as tk
-from tkinter import PhotoImage, ttk, simpledialog, messagebox , filedialog
+from tkinter import PhotoImage, ttk, simpledialog, messagebox, filedialog, colorchooser
 from tkinter import font as tkFont
 
 import cv2
@@ -95,6 +95,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             export_btn_style['pady'] = 9
             tk.Button(btn_frame, text="Export Documentation PDF", command=self.export_project,
                       **export_btn_style).pack(fill='x', pady=(2, 5), padx=4)
+            tk.Button(btn_frame, text="Export Project Package", command=self.export_project_package,
+                      **export_btn_style).pack(fill='x', pady=(0, 5), padx=4)
 
             # Editor container
             self.editor_container = ttk.Frame(self.root)
@@ -173,6 +175,59 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
             text.bind('<Control-x>', on_cut)
             text.bind('<Control-X>', on_cut)
+
+            context = tk.Menu(text, tearoff=0, bg='#252525', fg='#e0e0e0')
+            context.add_command(label='Cut', command=lambda: text.event_generate('<<Cut>>'))
+            context.add_command(label='Copy', command=lambda: text.event_generate('<<Copy>>'))
+            context.add_command(label='Paste', command=lambda: text.event_generate('<<Paste>>'))
+            context.add_separator()
+            context.add_command(label='Select all', command=lambda: text.tag_add('sel', '1.0', 'end-1c'))
+            text.bind('<Button-3>', lambda event: context.tk_popup(event.x_root, event.y_root), add='+')
+
+            def find_text(event=None):
+                query = simpledialog.askstring('Find', 'Find text:', parent=self.root)
+                text.tag_remove('search_match', '1.0', tk.END)
+                if not query:
+                    return 'break'
+                text.tag_configure('search_match', background='#8a6d00', foreground='white')
+                cursor = '1.0'
+                first = None
+                while True:
+                    found = text.search(query, cursor, stopindex=tk.END, nocase=True)
+                    if not found:
+                        break
+                    end = f'{found}+{len(query)}c'
+                    text.tag_add('search_match', found, end)
+                    first = first or found
+                    cursor = end
+                if first:
+                    text.mark_set(tk.INSERT, first)
+                    text.see(first)
+                return 'break'
+
+            def replace_text(event=None):
+                query = simpledialog.askstring('Replace', 'Find text:', parent=self.root)
+                if not query:
+                    return 'break'
+                replacement = simpledialog.askstring('Replace', 'Replace with:', parent=self.root)
+                if replacement is None:
+                    return 'break'
+                cursor = '1.0'
+                while True:
+                    found = text.search(query, cursor, stopindex=tk.END, nocase=True)
+                    if not found:
+                        break
+                    end = f'{found}+{len(query)}c'
+                    text.delete(found, end)
+                    text.insert(found, replacement)
+                    cursor = f'{found}+{len(replacement)}c'
+                self.schedule_save()
+                return 'break'
+
+            text.bind('<Control-f>', find_text)
+            text.bind('<Control-F>', find_text)
+            text.bind('<Control-r>', replace_text)
+            text.bind('<Control-R>', replace_text)
 
         def load_tree(self):
             """Load the entire tree structure from database"""
@@ -411,6 +466,25 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     f"An error occurred during export:\n{str(e)}" ,
                 )
 
+        def export_project_package(self):
+            """Save and export a portable project that can be imported later."""
+            self.save_current_page()
+            title = self.parent_card.get_title() if self.parent_card else 'Project'
+            safe_title = ''.join(c if c.isalnum() or c in ' ._-' else '_' for c in title)
+            path = filedialog.asksaveasfilename(
+                parent=self.root, title='Export Tarizz Project',
+                defaultextension='.tarizz', initialfile=f'{safe_title}.tarizz',
+                filetypes=[('Tarizz project', '*.tarizz')])
+            if not path:
+                return
+            try:
+                from project_archive import export_project_package
+                from backend.database import get_db
+                export_project_package(self.project_id, path, get_db())
+                messagebox.showinfo('Export complete', f'Project saved to:\n{path}', parent=self.root)
+            except Exception as exc:
+                messagebox.showerror('Export failed', str(exc), parent=self.root)
+
         def on_tree_select(self, event):
             """Handle tree item selection"""
             node_info, tree_id = self.get_selected_node_info()
@@ -482,7 +556,10 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
             def _fmt(op):
                 def handler(event=None):
+                    before = formatter.snapshot()
                     op()
+                    formatter.record_change(before)
+                    self.schedule_save()
                     return 'break'
                 return handler
 
@@ -495,6 +572,28 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             text.bind('<Control-h>', _fmt(formatter.toggle_highlight))
             text.bind('<Control-H>', _fmt(formatter.toggle_highlight))
             text.bind('<Control-Shift-H>', _fmt(formatter.toggle_highlight))
+            text.bind('<Control-Shift-X>', _fmt(formatter.toggle_strike))
+            text.bind('<Control-Shift-C>', _fmt(formatter.clear_formatting))
+
+            def undo_editor(event=None):
+                if not formatter.undo_formatting():
+                    formatter._format_redo.clear()
+                    editor._undo()
+                self.schedule_save()
+                return 'break'
+
+            def redo_editor(event=None):
+                if not formatter.redo_formatting():
+                    editor._redo()
+                self.schedule_save()
+                return 'break'
+
+            text.bind('<Control-z>', undo_editor)
+            text.bind('<Control-Z>', undo_editor)
+            text.bind('<Control-y>', redo_editor)
+            text.bind('<Control-Y>', redo_editor)
+            text.bind('<Control-Shift-z>', redo_editor)
+            text.bind('<Control-Shift-Z>', redo_editor)
 
             dump = None
             try:
@@ -528,9 +627,13 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 except:
                     return (0, 0)
                 
-            toolbar = tk.Frame(frame, bg='#181818', height=38)
+            toolbar = tk.Frame(frame, bg='#181818', height=76)
             toolbar.pack(side='top', fill='x', pady=(0, 6))
             toolbar.pack_propagate(False)
+            toolbar_top = tk.Frame(toolbar, bg='#181818')
+            toolbar_top.pack(fill='x')
+            toolbar_bottom = tk.Frame(toolbar, bg='#181818')
+            toolbar_bottom.pack(fill='x')
 
             btn_style = {
                 'bg': '#252525', 'fg': '#d0d0d0',
@@ -706,9 +809,9 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         text.window_create("end", window=label)
 
             # Add the 3 buttons
-            tk.Button(toolbar, text="Image", command=lambda: insert_new_media('image'), **btn_style).pack(side='left', padx=5)
-            tk.Button(toolbar, text="Video", command=lambda: insert_new_media('video'), **btn_style).pack(side='left', padx=5)
-            tk.Button(toolbar, text="Document", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=5)
+            tk.Button(toolbar_top, text="Image", command=lambda: insert_new_media('image'), **btn_style).pack(side='left', padx=3)
+            tk.Button(toolbar_top, text="Video", command=lambda: insert_new_media('video'), **btn_style).pack(side='left', padx=3)
+            tk.Button(toolbar_top, text="Document", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=3)
 
             # Font family selector
             # Populate directly from the fonts actually installed on this OS
@@ -728,7 +831,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             _default_font = 'Segoe UI' if 'Segoe UI' in fonts else fonts[0]
             font_var = tk.StringVar(value=_default_font)  # default
 
-            font_menu = tk.OptionMenu(toolbar, font_var, *fonts,
+            font_menu = tk.OptionMenu(toolbar_top, font_var, *fonts,
                                       command=lambda f: apply_font_family(f))
             
             # Safe style for the OptionMenu button itself
@@ -744,7 +847,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48 , 52 , 64 , 72 , 80 , 96]
             size_var = tk.StringVar(value='12')
 
-            size_menu = tk.OptionMenu(toolbar, size_var, *sizes,
+            size_menu = tk.OptionMenu(toolbar_top, size_var, *sizes,
                                       command=lambda s: apply_font_size(int(s)))
             
             # Safe style for the OptionMenu button itself
@@ -762,30 +865,93 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             style_btn_style = btn_style.copy()
             style_btn_style['padx'] = 10
 
-            tk.Button(toolbar, text="B", command=lambda: _fmt(formatter.toggle_bold)(),
+            tk.Button(toolbar_bottom, text="B", command=lambda: _fmt(formatter.toggle_bold)(),
                       font=('Segoe UI', 10, 'bold'),
                       **{k: v for k, v in style_btn_style.items() if k != 'font'}
                       ).pack(side='left', padx=2)
-            tk.Button(toolbar, text="I", command=lambda: _fmt(formatter.toggle_italic)(),
+            tk.Button(toolbar_bottom, text="I", command=lambda: _fmt(formatter.toggle_italic)(),
                       font=('Segoe UI', 10, 'italic'),
                       **{k: v for k, v in style_btn_style.items() if k != 'font'}
                       ).pack(side='left', padx=2)
-            tk.Button(toolbar, text="U", command=lambda: _fmt(formatter.toggle_underline)(),
+            tk.Button(toolbar_bottom, text="U", command=lambda: _fmt(formatter.toggle_underline)(),
                       font=('Segoe UI', 10, 'underline'),
                       **{k: v for k, v in style_btn_style.items() if k != 'font'}
                       ).pack(side='left', padx=2)
-            tk.Button(toolbar, text="H", command=lambda: _fmt(formatter.toggle_highlight)(),
+            tk.Button(toolbar_bottom, text="H", command=lambda: _fmt(formatter.toggle_highlight)(),
                       font=('Segoe UI', 10, 'bold'),
                       **{k: v for k, v in style_btn_style.items() if k != 'font'}
                       ).pack(side='left', padx=(2, 5))
 
+            tk.Button(toolbar_bottom, text="S", command=_fmt(formatter.toggle_strike),
+                      font=('Segoe UI', 10, 'overstrike'),
+                      **{k: v for k, v in style_btn_style.items() if k != 'font'}).pack(side='left', padx=2)
+            tk.Button(toolbar_bottom, text="Code", command=_fmt(formatter.toggle_inline_code),
+                      **style_btn_style).pack(side='left', padx=2)
+
+            style_var = tk.StringVar(value='Normal')
+            style_map = {'Normal': 'normal', 'Title': 'title', 'Heading 1': 'heading1',
+                         'Heading 2': 'heading2', 'Heading 3': 'heading3', 'Quote': 'quote'}
+            style_menu = tk.OptionMenu(toolbar_bottom, style_var, *style_map,
+                                       command=lambda value: _fmt(lambda: formatter.apply_paragraph_style(style_map[value]))())
+            style_menu.config(width=9, **menu_btn_style)
+            style_menu['menu'].config(**menu_items_style)
+            style_menu.pack(side='left', padx=3)
+
+            more_button = tk.Menubutton(toolbar_top, text='More', **btn_style)
+            more_menu = tk.Menu(more_button, tearoff=0, bg='#252525', fg='#d0d0d0')
+            more_button.configure(menu=more_menu)
+            more_button.pack(side='right', padx=3)
+
+            for label, alignment in [('L', 'left'), ('C', 'center'), ('R', 'right'), ('J', 'justify')]:
+                tk.Button(toolbar_bottom, text=label,
+                          command=_fmt(lambda a=alignment: formatter.apply_alignment(a)),
+                          **style_btn_style).pack(side='left', padx=1)
+            more_menu.add_command(label='Bulleted list', command=_fmt(lambda: formatter.toggle_list('bullet')))
+            more_menu.add_command(label='Numbered list', command=_fmt(lambda: formatter.toggle_list('number')))
+
+            def choose_color(background=False):
+                color = colorchooser.askcolor(parent=self.root)[1]
+                if color:
+                    before = formatter.snapshot()
+                    formatter.apply_color(color, background=background)
+                    formatter.record_change(before)
+                    self.schedule_save()
+
+            more_menu.add_command(label='Text color…', command=lambda: choose_color(False))
+            more_menu.add_command(label='Highlight color…', command=lambda: choose_color(True))
+            more_menu.add_command(label='Clear formatting', command=_fmt(formatter.clear_formatting))
+            more_menu.add_separator()
+            more_menu.add_command(label='Superscript', command=_fmt(formatter.toggle_superscript))
+            more_menu.add_command(label='Subscript', command=_fmt(formatter.toggle_subscript))
+            more_menu.add_separator()
+
+            def insert_link():
+                if not text.tag_ranges('sel'):
+                    messagebox.showinfo('Insert link', 'Select the link text first.', parent=self.root)
+                    return
+                url = simpledialog.askstring('Insert link', 'URL:', parent=self.root)
+                if url:
+                    before = formatter.snapshot()
+                    formatter.apply_link(url)
+                    formatter.record_change(before)
+                    self.schedule_save()
+
+            more_menu.add_command(label='Insert link…', command=insert_link)
+            more_menu.add_command(label='Remove link', command=_fmt(formatter.remove_link))
+
             def apply_font_family(family):
                 """Apply font family using formatter (FIXED)"""
+                before = formatter.snapshot()
                 formatter.apply_font_family(family)
+                formatter.record_change(before)
+                self.schedule_save()
 
             def apply_font_size(size):
                 """Apply font size using formatter (FIXED)"""
+                before = formatter.snapshot()
                 formatter.apply_font_size(size)
+                formatter.record_change(before)
+                self.schedule_save()
 
             
             # Reload media safely
@@ -1158,21 +1324,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                     # Text widget no longer exists (e.g. page switched mid-save)
                     return
                 
-                tags = {}
-                for tag_name in ['bold', 'italic', 'underline', 'highlight', 'code_block']:
-                    ranges = text.tag_ranges(tag_name)
-                    if ranges:
-                        tags[tag_name] = [[str(ranges[i]), str(ranges[i+1])] for i in range(0, len(ranges), 2)]
-
-                # Save dynamic font_ and size_ tags
-                all_tags = text.tag_names()
-                for tag_name in all_tags:
-                    if tag_name.startswith('font_') or tag_name.startswith('size_'):
-                        ranges = text.tag_ranges(tag_name)
-                        if ranges:
-                            if tag_name not in tags:
-                                tags[tag_name] = []
-                            tags[tag_name].extend([[str(ranges[i]), str(ranges[i+1])] for i in range(0, len(ranges), 2)])
+                tags = self.formatter.collect_tags_map() if self.formatter else {}
                 
                 dump_data = {'content': content, 'tags': tags}
                 save_subpage(self.current_node_id, dump_data)

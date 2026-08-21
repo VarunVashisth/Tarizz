@@ -6,12 +6,14 @@ and highlight that does not bleed onto newly typed text.
 
 import tkinter as tk
 from tkinter import font as tkFont
+from urllib.parse import quote, unquote
+import webbrowser
 
 
 PRESERVE_TAGS = {
     'sel', 'sel.last',
     'bold', 'italic', 'underline', 'highlight',
-    'code_block',
+    'strike', 'code_block', 'quote', 'inline_code',
 }
 
 
@@ -24,6 +26,10 @@ class TextFormatter:
         self.default_size = 11
         self._strip_highlight = False
         self._typing_font = None  # sticky format for newly typed text when nothing is selected
+        self._typing_tags = set()
+        self._format_undo = []
+        self._format_redo = []
+        self._format_is_latest = False
         self.setup_base_tags()
         self._bind_highlight_guard()
         self._bind_typing_font_reset()
@@ -33,6 +39,16 @@ class TextFormatter:
         self.text.tag_configure('bold')
         self.text.tag_configure('italic')
         self.text.tag_configure('underline', underline=True)
+        self.text.tag_configure('strike', overstrike=True)
+        self.text.tag_configure('superscript', offset=5, font=(self.default_family, 8))
+        self.text.tag_configure('subscript', offset=-3, font=(self.default_family, 8))
+        self.text.tag_configure('inline_code', font=('Consolas', self.default_size),
+                                background='#2d2d2d', foreground='#e5e7eb')
+        self.text.tag_configure('quote', lmargin1=24, lmargin2=24, rmargin=18,
+                                foreground='#b8c0cc', spacing1=5, spacing3=5)
+        for name, justify in (('align_left', 'left'), ('align_center', 'center'),
+                              ('align_right', 'right'), ('align_justify', 'left')):
+            self.text.tag_configure(name, justify=justify)
         self.text.tag_configure(
             'highlight',
             background='#ffff99',
@@ -50,6 +66,10 @@ class TextFormatter:
     def _on_keypress(self, event):
         if event.state & 0x4:  # Control
             return
+        if event.keysym not in ('Shift_L', 'Shift_R', 'Control_L', 'Control_R',
+                                'Alt_L', 'Alt_R', 'Escape'):
+            self._format_is_latest = False
+            self._format_redo.clear()
         if event.keysym in (
             'Left', 'Right', 'Up', 'Down', 'Home', 'End',
         ):
@@ -79,6 +99,8 @@ class TextFormatter:
 
         if self._typing_font is not None:
             self.text.after_idle(self._apply_typing_font_to_last_char)
+        if self._typing_tags:
+            self.text.after_idle(self._apply_typing_tags_to_last_char)
 
     def _strip_new_highlight(self):
         if not self._strip_highlight:
@@ -115,6 +137,15 @@ class TextFormatter:
         except tk.TclError:
             pass
 
+    def _apply_typing_tags_to_last_char(self):
+        try:
+            end = self.text.index(tk.INSERT)
+            start = self.text.index(f'{end}-1c')
+            for tag in self._typing_tags:
+                self.text.tag_add(tag, start, end)
+        except tk.TclError:
+            pass
+
     def _current_typing_base(self):
         """Formatting to build on when changing the sticky typing font
         (no active selection)."""
@@ -137,6 +168,55 @@ class TextFormatter:
                 'slant': 'roman',
             }
 
+    def snapshot(self):
+        return {
+            'content': self.text.get('1.0', 'end-1c'),
+            'tags': self.collect_tags_map(),
+            'insert': self.text.index(tk.INSERT),
+        }
+
+    def record_change(self, before):
+        after = self.snapshot()
+        if before != after:
+            self._format_undo.append((before, after))
+            self._format_undo = self._format_undo[-100:]
+            self._format_redo.clear()
+            self._format_is_latest = True
+
+    def _restore_snapshot(self, state):
+        self.text.delete('1.0', tk.END)
+        self.text.insert('1.0', state['content'])
+        for tag in self.text.tag_names():
+            if tag not in ('sel', 'sel.last'):
+                self.text.tag_remove(tag, '1.0', tk.END)
+        self.apply_tags_map(state['tags'])
+        try:
+            self.text.mark_set(tk.INSERT, state['insert'])
+            self.text.see(state['insert'])
+        except tk.TclError:
+            pass
+        try:
+            self.text.edit_reset()
+        except tk.TclError:
+            pass
+
+    def undo_formatting(self):
+        if not self._format_is_latest or not self._format_undo:
+            return False
+        before, after = self._format_undo.pop()
+        self._restore_snapshot(before)
+        self._format_redo.append((before, after))
+        self._format_is_latest = bool(self._format_undo)
+        return True
+
+    def redo_formatting(self):
+        if not self._format_redo:
+            return False
+        before, after = self._format_redo.pop()
+        self._restore_snapshot(after)
+        self._format_undo.append((before, after))
+        self._format_is_latest = True
+        return True
     def get_current_formatting(self, index):
         tags = self.text.tag_names(index)
 
@@ -316,6 +396,7 @@ class TextFormatter:
     def toggle_underline(self):
         sel = self._selection()
         if not sel:
+            self._toggle_typing_tag('underline')
             return
         sel_start, sel_end = sel
         if 'underline' in self.text.tag_names(sel_start):
@@ -328,6 +409,7 @@ class TextFormatter:
         """Toggle highlight on the selection only; new typing at the end stays unhighlighted."""
         sel = self._selection()
         if not sel:
+            self._toggle_typing_tag('highlight')
             return
         sel_start, sel_end = sel
         if 'highlight' in self.text.tag_names(sel_start):
@@ -336,6 +418,158 @@ class TextFormatter:
             self.text.tag_add('highlight', sel_start, sel_end)
             self.text.tag_lower('highlight')
         self._clear_selection(sel_end)
+
+    def _toggle_typing_tag(self, tag_name):
+        if tag_name in self._typing_tags:
+            self._typing_tags.remove(tag_name)
+        else:
+            self._typing_tags.add(tag_name)
+
+    def toggle_tag(self, tag_name):
+        """Toggle a character tag on a selection or future typing."""
+        sel = self._selection()
+        if not sel:
+            self._toggle_typing_tag(tag_name)
+            return
+        start, end = sel
+        if tag_name in self.text.tag_names(start):
+            self.text.tag_remove(tag_name, start, end)
+        else:
+            self.text.tag_add(tag_name, start, end)
+        self._clear_selection(end)
+
+    def toggle_strike(self):
+        self.toggle_tag('strike')
+
+    def toggle_inline_code(self):
+        self.toggle_tag('inline_code')
+
+    def toggle_superscript(self):
+        self.toggle_tag('superscript')
+
+    def toggle_subscript(self):
+        self.toggle_tag('subscript')
+
+    def apply_link(self, url):
+        sel = self._selection()
+        if not sel or not url:
+            return
+        start, end = sel
+        for tag in self.text.tag_names():
+            if tag.startswith('link_'):
+                self.text.tag_remove(tag, start, end)
+        tag = 'link_' + quote(url.strip(), safe='')
+        self.configure_saved_tag(tag)
+        self.text.tag_add(tag, start, end)
+        self._clear_selection(end)
+
+    def remove_link(self):
+        sel = self._selection()
+        if not sel:
+            return
+        start, end = sel
+        for tag in self.text.tag_names():
+            if tag.startswith('link_'):
+                self.text.tag_remove(tag, start, end)
+        self._clear_selection(end)
+
+    def apply_color(self, color, background=False):
+        if not color:
+            return
+        prefix = 'bgcolor_' if background else 'color_'
+        tag = prefix + color.lstrip('#').upper()
+        option = {'background': color} if background else {'foreground': color}
+        self.text.tag_configure(tag, **option)
+        sel = self._selection()
+        if not sel:
+            self._typing_tags = {t for t in self._typing_tags if not t.startswith(prefix)}
+            self._typing_tags.add(tag)
+            return
+        start, end = sel
+        for existing in self.text.tag_names():
+            if existing.startswith(prefix):
+                self.text.tag_remove(existing, start, end)
+        self.text.tag_add(tag, start, end)
+        self._clear_selection(end)
+
+    def clear_formatting(self):
+        sel = self._selection()
+        if not sel:
+            self._typing_font = None
+            self._typing_tags.clear()
+            return
+        start, end = sel
+        prefixes = ('fmt_', 'font_', 'size_', 'color_', 'bgcolor_', 'align_',
+                    'style_', 'list_', 'indent_', 'link_')
+        named = {'bold', 'italic', 'underline', 'strike', 'highlight',
+                 'inline_code', 'quote', 'superscript', 'subscript'}
+        for tag in self.text.tag_names():
+            if tag in named or tag.startswith(prefixes):
+                self.text.tag_remove(tag, start, end)
+        self._clear_selection(end)
+
+    def _paragraph_range(self):
+        sel = self._selection()
+        start = sel[0] if sel else self.text.index(tk.INSERT)
+        end = sel[1] if sel else start
+        if sel and self.text.compare(end, '>', start) and end.endswith('.0'):
+            end = self.text.index(f'{end}-1c')
+        return self.text.index(f'{start} linestart'), self.text.index(f'{end} lineend +1c')
+
+    def apply_paragraph_tag(self, tag_name, exclusive_prefix=None):
+        start, end = self._paragraph_range()
+        if exclusive_prefix:
+            for tag in self.text.tag_names():
+                if tag.startswith(exclusive_prefix):
+                    self.text.tag_remove(tag, start, end)
+        self.text.tag_add(tag_name, start, end)
+        self.text.tag_raise(tag_name)
+
+    def apply_alignment(self, alignment):
+        self.apply_paragraph_tag(f'align_{alignment}', 'align_')
+
+    def apply_paragraph_style(self, style):
+        specs = {
+            'normal': (self.default_family, self.default_size, 'normal', 0, 0),
+            'title': (self.default_family, 24, 'bold', 10, 10),
+            'heading1': (self.default_family, 20, 'bold', 9, 5),
+            'heading2': (self.default_family, 16, 'bold', 7, 4),
+            'heading3': (self.default_family, 13, 'bold', 5, 3),
+        }
+        if style == 'quote':
+            self.apply_paragraph_tag('quote', 'style_')
+            return
+        family, size, weight, before, after = specs.get(style, specs['normal'])
+        tag = f'style_{style}'
+        self.text.tag_configure(tag, font=tkFont.Font(family=family, size=size, weight=weight),
+                                spacing1=before, spacing3=after)
+        self.apply_paragraph_tag(tag, 'style_')
+
+    def toggle_list(self, kind):
+        """Apply/remove visual list formatting and insert semantic prefixes."""
+        start, end = self._paragraph_range()
+        lines = range(int(start.split('.')[0]), int(end.split('.')[0]))
+        tag = f'list_{kind}'
+        self.text.tag_configure(tag, lmargin1=16, lmargin2=34, tabs=('34p',))
+        for number, line in enumerate(lines, 1):
+            line_start = f'{line}.0'
+            line_end = f'{line}.0 lineend'
+            existing = self.text.get(line_start, line_end)
+            if tag in self.text.tag_names(line_start):
+                self.text.tag_remove(tag, line_start, f'{line_end}+1c')
+                if existing.startswith(('•\t',)):
+                    self.text.delete(line_start, f'{line_start}+2c')
+                else:
+                    import re
+                    match = re.match(r'\d+\.\t', existing)
+                    if match:
+                        self.text.delete(line_start, f'{line_start}+{match.end()}c')
+            else:
+                for other in ('list_bullet', 'list_number'):
+                    self.text.tag_remove(other, line_start, f'{line_end}+1c')
+                prefix = '•\t' if kind == 'bullet' else f'{number}.\t'
+                self.text.insert(line_start, prefix)
+                self.text.tag_add(tag, line_start, f'{line}.0 lineend +1c')
 
     def configure_saved_tag(self, tag_name, has_fmt_tags=False):
         """Reconfigure a tag name loaded from storage."""
@@ -373,6 +607,34 @@ class TextFormatter:
             self.setup_base_tags()
         elif tag_name == 'underline':
             self.text.tag_configure('underline', underline=True)
+        elif tag_name == 'strike':
+            self.text.tag_configure('strike', overstrike=True)
+        elif tag_name == 'superscript':
+            self.text.tag_configure(tag_name, offset=5, font=(self.default_family, 8))
+        elif tag_name == 'subscript':
+            self.text.tag_configure(tag_name, offset=-3, font=(self.default_family, 8))
+        elif tag_name.startswith('color_'):
+            self.text.tag_configure(tag_name, foreground='#' + tag_name[6:])
+        elif tag_name.startswith('bgcolor_'):
+            self.text.tag_configure(tag_name, background='#' + tag_name[8:])
+        elif tag_name.startswith('align_'):
+            self.text.tag_configure(tag_name, justify=tag_name[6:] if tag_name[6:] != 'justify' else 'left')
+        elif tag_name.startswith('style_'):
+            self.apply_paragraph_style(tag_name[6:])
+            self.text.tag_remove(tag_name, '1.0', tk.END)
+        elif tag_name.startswith('list_'):
+            self.text.tag_configure(tag_name, lmargin1=16, lmargin2=34, tabs=('34p',))
+        elif tag_name == 'inline_code':
+            self.text.tag_configure(tag_name, font=('Consolas', self.default_size), background='#2d2d2d')
+        elif tag_name == 'quote':
+            self.text.tag_configure(tag_name, lmargin1=24, lmargin2=24, rmargin=18,
+                                    foreground='#b8c0cc', spacing1=5, spacing3=5)
+        elif tag_name.startswith('link_'):
+            url = unquote(tag_name[5:])
+            self.text.tag_configure(tag_name, foreground='#60a5fa', underline=True)
+            self.text.tag_bind(tag_name, '<Enter>', lambda e: self.text.configure(cursor='hand2'))
+            self.text.tag_bind(tag_name, '<Leave>', lambda e: self.text.configure(cursor='xterm'))
+            self.text.tag_bind(tag_name, '<Control-Button-1>', lambda e, target=url: webbrowser.open(target))
 
     def apply_tags_map(self, tags_data):
         """Restore {tag: [[start, end], ...]} from storage."""
@@ -398,7 +660,8 @@ class TextFormatter:
     def collect_tags_map(self):
         """Serialize user formatting for persistence."""
         tags = {}
-        skip = {'sel', 'sel.last'}
+        skip = {'sel', 'sel.last', 'search_match', 'code_delimiter',
+                'code_keyword', 'code_string', 'code_comment', 'code_number'}
         for tag_name in self.text.tag_names():
             if tag_name in skip:
                 continue

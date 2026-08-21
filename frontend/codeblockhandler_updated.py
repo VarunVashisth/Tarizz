@@ -137,10 +137,12 @@ class CodeBlockHandler:
         )
         self.text.tag_configure(
             'code_delimiter',
-            foreground='#6e7681', background=style['background'],
-            font=tkFont.Font(family=style['font'][0], size=max(8, style['font'][1] - 1)),
-            lmargin1=24, lmargin2=24, rmargin=18,
+            elide=True,
         )
+        self.text.tag_configure('code_keyword', foreground='#ff7b72')
+        self.text.tag_configure('code_string', foreground='#a5d6ff')
+        self.text.tag_configure('code_comment', foreground='#8b949e')
+        self.text.tag_configure('code_number', foreground='#79c0ff')
         # Highlight sits under code styling so yellow never overwrites code colors.
         try:
             self.text.tag_lower('highlight')
@@ -167,6 +169,8 @@ class CodeBlockHandler:
             # Remove existing code_block tags
             self.text.tag_remove('code_block', '1.0', tk.END)
             self.text.tag_remove('code_delimiter', '1.0', tk.END)
+            for syntax_tag in ('code_keyword', 'code_string', 'code_comment', 'code_number'):
+                self.text.tag_remove(syntax_tag, '1.0', tk.END)
             
             # Find all code block matches and apply tag
             for match in re.finditer(self.CODE_BLOCK_PATTERN, content, re.DOTALL):
@@ -177,10 +181,26 @@ class CodeBlockHandler:
                 self.text.tag_add('code_delimiter', open_start, code_start)
                 self.text.tag_add('code_block', code_start, code_end)
                 self.text.tag_add('code_delimiter', code_end, close_end)
+                code = match.group(1)
+                base = match.start() + 3
+                patterns = (
+                    ('code_comment', r'(?m)(#|//).*?$'),
+                    ('code_string', r'("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'),
+                    ('code_number', r'\b(?:0x[0-9a-fA-F]+|\d+(?:\.\d+)?)\b'),
+                    ('code_keyword', r'\b(?:and|as|async|await|break|case|catch|class|const|continue|def|do|else|elif|except|export|false|finally|for|from|function|if|import|in|is|let|new|none|null|or|pass|raise|return|switch|throw|true|try|var|while|with|yield)\b'),
+                )
+                for syntax_tag, pattern in patterns:
+                    for token in re.finditer(pattern, code, re.IGNORECASE):
+                        token_start = f"1.0 + {base + token.start()} chars"
+                        token_end = f"1.0 + {base + token.end()} chars"
+                        self.text.tag_add(syntax_tag, token_start, token_end)
             try:
                 self.text.tag_lower('highlight')
                 self.text.tag_raise('code_block')
                 self.text.tag_raise('code_delimiter')
+                # Broad tokens first; strings/comments win when ranges overlap.
+                for syntax_tag in ('code_keyword', 'code_number', 'code_string', 'code_comment'):
+                    self.text.tag_raise(syntax_tag)
             except tk.TclError:
                 pass
         except tk.TclError:

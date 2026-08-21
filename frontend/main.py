@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import PhotoImage, ttk
+from tkinter import PhotoImage, ttk, filedialog, messagebox
 import math
 from project_manager import create_project_manager
 import os , sys
@@ -419,6 +419,19 @@ class ProjectDashboard:
             command=self.add_new_project, **btn_style
         )
         self.add_btn.pack(pady=(0, 10))
+
+        self.import_btn = tk.Button(
+            self.sidebar, text="Import Project",
+            command=self.import_project_package, **btn_style
+        )
+        self.import_btn.pack(pady=(0, 10))
+
+        self.export_package_btn = tk.Button(
+            self.sidebar, text="Export Selected",
+            command=self.export_selected_package,
+            state='disabled', **btn_style
+        )
+        self.export_package_btn.pack(pady=(0, 10))
         
         self.delete_btn = tk.Button(
             self.sidebar, text="🗑 Delete Selected",
@@ -455,6 +468,46 @@ class ProjectDashboard:
     def add_new_project(self):
         """Add a new empty project card"""
         self.add_card("New Project", "Click to edit description")
+
+    def export_selected_package(self):
+        if not self.selected_card or not getattr(self.selected_card, 'db_id', None):
+            return
+        self.save_cards_to_db()
+        default_name = ''.join(c if c.isalnum() or c in ' ._-' else '_' for c in self.selected_card.get_title())
+        path = filedialog.asksaveasfilename(
+            parent=self.root, title='Export Tarizz Project',
+            defaultextension='.tarizz', initialfile=f'{default_name}.tarizz',
+            filetypes=[('Tarizz project', '*.tarizz')])
+        if not path:
+            return
+        try:
+            from project_archive import export_project_package
+            from backend.database import get_db
+            export_project_package(self.selected_card.db_id, path, get_db())
+            messagebox.showinfo('Export complete', f'Project saved to:\n{path}', parent=self.root)
+        except Exception as exc:
+            messagebox.showerror('Export failed', str(exc), parent=self.root)
+
+    def import_project_package(self):
+        path = filedialog.askopenfilename(
+            parent=self.root, title='Import Tarizz Project',
+            filetypes=[('Tarizz project', '*.tarizz'), ('All files', '*.*')])
+        if not path:
+            return
+        try:
+            from project_archive import import_project_package
+            from backend.database import get_db, get_all_projects
+            project_id = import_project_package(path, get_db())
+            project = next(p for p in get_all_projects() if p['id'] == project_id)
+            card = ProjectCard(self, title=project['title'], description=project.get('description') or '')
+            card.db_id = project_id
+            card.project_data = {'id': project_id}
+            self.cards.append(card)
+            self.arrange_cards()
+            self.select_card(card)
+            messagebox.showinfo('Import complete', 'The project was restored with its pages, formatting, flowcharts, and media.', parent=self.root)
+        except Exception as exc:
+            messagebox.showerror('Import failed', str(exc), parent=self.root)
         
     def add_card(self, title="New Project", description="Click to edit"):
         
@@ -593,10 +646,12 @@ class ProjectDashboard:
         """Update UI based on selection"""
         if self.selected_card:
             self.delete_btn.configure(state='normal')
+            self.export_package_btn.configure(state='normal')
             title = self.selected_card.get_title()
             self.info_label.configure(text=f"Selected: {title[:20]}...")
         else:
             self.delete_btn.configure(state='disabled')
+            self.export_package_btn.configure(state='disabled')
             self.info_label.configure(text="Click a card to select")
 
     def switch_vault(self):
