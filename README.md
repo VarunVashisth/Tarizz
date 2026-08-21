@@ -170,6 +170,8 @@ brew install python-tk
 ```
 
 ---
+##Windows
+just download the installer and run it or package it yourself and run it
 
 ## Installing the Prebuilt Linux Build (Arch Linux)
 
