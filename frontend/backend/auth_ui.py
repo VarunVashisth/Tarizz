@@ -99,7 +99,41 @@ class _AuthWindow:
             kwargs["show"] = show
         e = tk.Entry(parent, **kwargs)
         e.pack(fill="x", ipady=7, pady=(2, 0))
+        self._bind_word_navigation(e)
         return e
+
+    @staticmethod
+    def _bind_word_navigation(entry):
+        """Consistent Ctrl+Arrow word navigation across Tk platforms."""
+        def move(direction, select=False):
+            value = entry.get()
+            pos = entry.index(tk.INSERT)
+            if direction < 0:
+                while pos > 0 and value[pos - 1].isspace():
+                    pos -= 1
+                while pos > 0 and not value[pos - 1].isspace():
+                    pos -= 1
+            else:
+                while pos < len(value) and not value[pos].isspace():
+                    pos += 1
+                while pos < len(value) and value[pos].isspace():
+                    pos += 1
+            if select:
+                try:
+                    anchor = entry.index(tk.ANCHOR)
+                except tk.TclError:
+                    anchor = entry.index(tk.INSERT)
+                    entry.selection_from(anchor)
+                entry.selection_range(min(anchor, pos), max(anchor, pos))
+            else:
+                entry.selection_clear()
+            entry.icursor(pos)
+            entry.xview_moveto(pos / max(1, len(value)))
+            return 'break'
+        entry.bind('<Control-Left>', lambda _e: move(-1))
+        entry.bind('<Control-Right>', lambda _e: move(1))
+        entry.bind('<Control-Shift-Left>', lambda _e: move(-1, True))
+        entry.bind('<Control-Shift-Right>', lambda _e: move(1, True))
 
     def _make_button(self, parent, text, command, secondary=False):
         bg = "#404040" if secondary else "#0078d4"

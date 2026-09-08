@@ -139,12 +139,40 @@ class Database:
                 );
             """)
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS diary_entries (
+                    entry_date TEXT PRIMARY KEY,
+                    encrypted_dump BLOB NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS daily_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_date TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    project_id INTEGER,
+                    completed INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+                );
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    setting_key TEXT PRIMARY KEY,
+                    setting_value TEXT NOT NULL
+                );
+            """)
+
             self._ensure_column(conn, "nodes", "formatting", "TEXT DEFAULT '[]'")
 
             conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_project ON nodes(project_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_content_node ON content(node_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_media_node ON media(node_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_date ON daily_tasks(task_date);")
 
             conn.commit()
         finally:
@@ -355,6 +383,55 @@ class Database:
             return self._normalize_dump(parsed)
         finally:
             conn.close()
+
+    def get_setting(self, key: str, default=None):
+        with self._connect() as conn:
+            row = conn.execute("SELECT setting_value FROM app_settings WHERE setting_key=?", (key,)).fetchone()
+            return row[0] if row else default
+
+    def set_setting(self, key: str, value: str):
+        with self._connect() as conn:
+            conn.execute("INSERT INTO app_settings(setting_key, setting_value) VALUES(?, ?) "
+                         "ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value", (key, value))
+
+    def save_diary_entry(self, entry_date: str, content: str):
+        import time
+        raw = content.encode('utf-8')
+        payload = encrypt(raw, self._session_key) if self._session_key else raw
+        with self._connect() as conn:
+            conn.execute("INSERT INTO diary_entries(entry_date, encrypted_dump, updated_at) VALUES(?, ?, ?) "
+                         "ON CONFLICT(entry_date) DO UPDATE SET encrypted_dump=excluded.encrypted_dump, updated_at=excluded.updated_at",
+                         (entry_date, payload, time.time()))
+
+    def load_diary_entry(self, entry_date: str) -> str:
+        with self._connect() as conn:
+            row = conn.execute("SELECT encrypted_dump FROM diary_entries WHERE entry_date=?", (entry_date,)).fetchone()
+        if not row:
+            return ''
+        raw = decrypt(row[0], self._session_key) if self._session_key else row[0]
+        return raw.decode('utf-8')
+
+    def get_tasks(self, task_date: str) -> List[Dict]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT t.*, p.title AS project_title FROM daily_tasks t "
+                                "LEFT JOIN projects p ON p.id=t.project_id WHERE task_date=? ORDER BY completed, id",
+                                (task_date,)).fetchall()
+            return [dict(row) for row in rows]
+
+    def add_task(self, task_date: str, title: str, project_id=None) -> int:
+        import time
+        with self._connect() as conn:
+            cur = conn.execute("INSERT INTO daily_tasks(task_date,title,project_id,created_at) VALUES(?,?,?,?)",
+                               (task_date, title, project_id, time.time()))
+            return cur.lastrowid
+
+    def set_task_completed(self, task_id: int, completed: bool):
+        with self._connect() as conn:
+            conn.execute("UPDATE daily_tasks SET completed=? WHERE id=?", (1 if completed else 0, task_id))
+
+    def delete_task(self, task_id: int):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM daily_tasks WHERE id=?", (task_id,))
 
     def import_media_file(self, src_path: str) -> str:
         """Copy a user file into the app media library and return the new path."""

@@ -26,22 +26,25 @@ class SimpleTextEditor:
         self.bind_hotkeys()
 
     def create_ui(self):
+        from ui_theme import COLORS
         self.text_area = tk.Text(
             self.root,
             undo=True,
             autoseparators=True,
             maxundo=-1,
-            bg='#1a1a1a',
-            fg='#e0e0e0',
-            insertbackground='#ffffff',
-            selectbackground='#404040',
+            bg=COLORS['app'],
+            fg=COLORS['text'],
+            insertbackground=COLORS['text'],
+            selectbackground='#49435f',
             selectforeground='#ffffff',
-            font=('Consolas', 12),
+            font=('Segoe UI', 12),
             wrap='word',
             relief='flat',
             borderwidth=0,
-            padx=15,
-            pady=15
+            padx=42,
+            pady=28,
+            spacing1=2,
+            spacing3=2
         )
         self.text_area.pack(fill='both', expand=True)
         self.text_area.tag_configure('code_block', background='#2d2d2d', foreground='#00ff88', font=('Courier', 11))

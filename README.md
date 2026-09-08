@@ -1,7 +1,7 @@
 # Tarizz - Advanced Project Management & Documentation Tool
 
 ![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)
-![Tkinter](https://img.shields.io/badge/GUI-Tkinter-green.svg)
+![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52.svg)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)
 
@@ -11,7 +11,7 @@
 
 # Tarizz
 
-Tarizz is a desktop application for organizing projects into a folder tree, writing formatted documentation, embedding media, and designing flowcharts, all stored locally in an encrypted, password-protected database. It is built with Python and Tkinter and has no server or internet dependency.
+Tarizz is a desktop application for organizing projects into a folder tree, writing formatted documentation, planning daily work, keeping a private diary, and designing flowcharts. The primary interface is a modern PyQt6 single-window workspace; data remains local in an encrypted, password-protected SQLite vault.
 ![alt text](frontend/data/tarizzlogo.ico)
 **Table of Contents**
 - [Overview](#overview)
@@ -45,6 +45,11 @@ Tarizz gives each project a hierarchical structure of folders, subpages, and flo
 - **Media embedding** — insert images, videos, and documents (PDF/DOC/DOCX/TXT) directly into a subpage. Images and PDFs get generated thumbnails, videos get a play button that opens the system's default player, and all media can be downloaded back out.
 - **Flowchart editor** — a dedicated canvas for building diagrams with rectangles, ovals, diamonds, lines, and arrows, with pan, zoom, and PNG export.
 - **PDF export** — export an entire project (its tree structure, subpage content, and flowcharts rendered as images) to a single PDF document.
+- **Portable exports** — export an entire project as a UTF-8 plain-text file or as a portable `.tarizz` package.
+- **Markdown preview** — render headings, lists, quotes, links, emphasis, and fenced/inline code in a distraction-free preview window.
+- **Native formatted paste** — the Qt editor consumes HTML clipboard data from Google Docs, Word, browsers, and rich-text editors while `Ctrl+Shift+V` pastes plain text.
+- **Private diary** — keep date-based personal entries inside the encrypted vault with an additional password gate.
+- **Calendar and daily tasks** — plan work by date, complete or delete tasks, and optionally associate each task with a Tarizz project.
 - **Autosave** — subpages and flowcharts save automatically after a short pause in typing/editing, and also on losing focus.
 - **Encrypted local storage** — a single-user login protects an AES-256-GCM encrypted SQLite database with a scrypt-derived key; there is no cloud sync and no external account.
 
@@ -59,6 +64,7 @@ Tarizz/
 ├── get-pip.py
 └── frontend/
     ├── main.py                       Application entry point
+    ├── qt_app.py                     Single-window Qt workspace and integrated feature panels
     ├── project_manager.py            Project tree, subpage editor UI, toolbar
     ├── text_formatter.py             Font/size/bold/italic/underline/highlight logic
     ├── codeblockhandler_updated.py   Code block detection and theming
@@ -83,7 +89,7 @@ At runtime, Tarizz also creates a per-user data directory outside the repository
 ## File-by-File Explanation
 
 ### `frontend/main.py`
-Application entry point. Sets up the per-user data directory, runs the login/registration gate through `AuthManager`, unlocks the encrypted database on success, and then launches `ProjectDashboard` — the card-based grid of projects shown after login.
+Application entry point. Sets up the per-user data directory, runs the login/registration gate, unlocks the encrypted database, and launches the PyQt6 workspace.
 
 ### `frontend/project_manager.py`
 The largest module. Renders the project's folder/subpage/flowchart tree, opens the subpage text editor with its formatting toolbar (font family, font size, bold/italic/underline/highlight buttons), handles inserting and rendering media, and drives autosave for whichever editor is currently open.
@@ -128,7 +134,7 @@ The standard `pip` bootstrap script, provided for environments that don't alread
 
 ## Requirements
 
-- Python 3.9 or newer, with Tkinter available (bundled with most Python installers; on Linux it is usually a separate package — see [Running from Source](#running-from-source) below).
+- Python 3.9 or newer. PyQt6 provides the primary interface; Tkinter remains required for the current authentication gate.
 - The following third-party Python packages:
   - `pillow`
   - `opencv-python`
@@ -136,7 +142,15 @@ The standard `pip` bootstrap script, provided for environments that don't alread
   - `reportlab`
   - `cryptography`
 
-There is no `requirements.txt` in this repository at the moment; install the packages above directly, or generate your own `requirements.txt` from them.
+Install the Python dependencies from the included requirements file:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Tkinter is supplied by Python on Windows and macOS. Some Linux distributions provide it as a separate operating-system package, as described below.
+
+For reliable formatted paste on Wayland Linux, install the `wl-clipboard` system package. Tarizz also reads native Windows HTML clipboard data and HTML targets exposed through Tk/X11.
 
 ---
 
@@ -146,7 +160,7 @@ There is no `requirements.txt` in this repository at the moment; install the pac
 git clone https://github.com/VarunVashisth/Tarizz.git
 cd Tarizz/frontend
 
-pip install pillow opencv-python pymupdf reportlab cryptography
+python -m pip install -r requirements.txt
 
 python main.py
 ```

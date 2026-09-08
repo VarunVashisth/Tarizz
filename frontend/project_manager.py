@@ -38,6 +38,9 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             self.project_data = project_data if project_data is not None else {}
             self.project_id = self.project_data.get('id')  # Database project ID
             self.parent_card = parent_card
+            from ui_theme import COLORS, configure_ttk
+            self.colors = COLORS
+            configure_ttk(self.root)
    
             
             
@@ -46,20 +49,31 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 return
 
             # Sidebar
-            self.sidebar = ttk.Frame(self.root, width=250)
+            self.sidebar = ttk.Frame(self.root, width=270)
             self.sidebar.pack(side='left', fill='y')
+            self.sidebar.pack_propagate(False)
             self.sidebar.configure(style='Sidebar.TFrame')
 
             style = ttk.Style()
             style.theme_use('default')
             style.configure('Sidebar.TFrame', background='#222222')
             style.configure('Sidebar.Treeview', background='#222222', fieldbackground='#222222', 
-                          borderwidth=0, foreground='#cccccc', relief='flat')
+                          borderwidth=0, foreground='#d1d5db', relief='flat',
+                          font=('Segoe UI', 10), rowheight=30)
             style.map('Sidebar.Treeview',
                      background=[('selected', '#333333')],
                      foreground=[('selected', '#ffffff')])
 
-            self.tree = ttk.Treeview(self.sidebar, style='Sidebar.Treeview', show='tree')
+            heading = tk.Frame(self.sidebar, bg='#181818', padx=14, pady=12)
+            heading.pack(fill='x')
+            tk.Label(heading, text=self.project_data.get('title', 'Project'), bg='#181818', fg='#f9fafb',
+                     font=('Segoe UI', 13, 'bold'), anchor='w').pack(fill='x')
+            tk.Label(heading, text='PROJECT CONTENT', bg='#181818', fg='#6b7280',
+                     font=('Segoe UI', 8, 'bold'), anchor='w').pack(fill='x', pady=(4, 0))
+
+            tree_frame = tk.Frame(self.sidebar, bg='#222222')
+            tree_frame.pack(fill='both', expand=True)
+            self.tree = ttk.Treeview(tree_frame, style='Sidebar.Treeview', show='tree')
             self.tree.pack(fill='both', expand=True)
             self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
@@ -97,6 +111,10 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                       **export_btn_style).pack(fill='x', pady=(2, 5), padx=4)
             tk.Button(btn_frame, text="Export Project Package", command=self.export_project_package,
                       **export_btn_style).pack(fill='x', pady=(0, 5), padx=4)
+            tk.Button(btn_frame, text="Export Plain Text", command=self.export_project_text,
+                      **btn_style).pack(fill='x', pady=(0, 5), padx=4)
+            tk.Button(btn_frame, text="Calendar & Tasks", command=self.open_project_planner,
+                      **btn_style).pack(fill='x', pady=(0, 5), padx=4)
 
             # Editor container
             self.editor_container = ttk.Frame(self.root)
@@ -110,10 +128,29 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             self._save_timer = None
 
             # Build tree from database
-            self.root_item = self.tree.insert("", "end", text="Project", open=True)
+            self.root_item = self.tree.insert("", "end", text="▾  Project", open=True)
             self.node_id_to_tree_id = {}  # Map database node_id to tree item_id
             self.tree_id_to_node_id = {}  # Reverse mapping
             self.load_tree()
+            self.show_welcome_state()
+
+        def show_welcome_state(self):
+            c = self.colors
+            self.tree.selection_set(self.root_item)
+            welcome = tk.Frame(self.editor_container, bg=c['app'])
+            welcome.pack(fill='both', expand=True)
+            self.current_editor_frame = welcome
+            body = tk.Frame(welcome, bg=c['app'])
+            body.place(relx=.5, rely=.44, anchor='center')
+            tk.Label(body, text='◇', bg=c['app'], fg=c['accent'],
+                     font=('Segoe UI', 34)).pack(pady=(0, 10))
+            tk.Label(body, text='Open a page to start writing', bg=c['app'], fg=c['text'],
+                     font=('Segoe UI', 18, 'bold')).pack()
+            tk.Label(body, text='Choose a note or flowchart from the sidebar, or create a new one.',
+                     bg=c['app'], fg=c['muted'], font=('Segoe UI', 10)).pack(pady=(8, 18))
+            tk.Button(body, text='＋  New subpage', command=self.add_subpage, bg=c['accent'], fg='white',
+                      activebackground=c['accent_hover'], activeforeground='white', relief='flat', bd=0,
+                      padx=18, pady=9, cursor='hand2').pack()
 
         @staticmethod
         def validate_item_name(name):
@@ -161,7 +198,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             except tk.TclError:
                 pass
 
-        def setup_text_widget_bindings(self, text):
+        def setup_text_widget_bindings(self, text, rich_paste_callback=None):
             def on_delete_key(event):
                 self.root.after(10, lambda: self.cleanup_orphaned_tags(text))
 
@@ -179,7 +216,11 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             context = tk.Menu(text, tearoff=0, bg='#252525', fg='#e0e0e0')
             context.add_command(label='Cut', command=lambda: text.event_generate('<<Cut>>'))
             context.add_command(label='Copy', command=lambda: text.event_generate('<<Copy>>'))
-            context.add_command(label='Paste', command=lambda: text.event_generate('<<Paste>>'))
+            def context_paste():
+                if not rich_paste_callback or not rich_paste_callback():
+                    text.event_generate('<<Paste>>')
+            context.add_command(label='Paste with formatting', command=context_paste)
+            context.add_command(label='Paste as plain text', command=lambda: text.event_generate('<<Paste>>'))
             context.add_separator()
             context.add_command(label='Select all', command=lambda: text.tag_add('sel', '1.0', 'end-1c'))
             text.bind('<Button-3>', lambda event: context.tk_popup(event.x_root, event.y_root), add='+')
@@ -253,7 +294,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 if parent_node_id not in children_map:
                     return
                 for node in children_map[parent_node_id]:
-                    tree_id = self.tree.insert(parent_tree_id, "end", text=node['name'], open=True)
+                    icon = {'folder': '▸', 'subpage': '□', 'flowchart': '◇'}.get(node['node_type'], '·')
+                    tree_id = self.tree.insert(parent_tree_id, "end", text=f"{icon}  {node['name']}", open=True)
                     self.node_id_to_tree_id[node['id']] = tree_id
                     self.tree_id_to_node_id[tree_id] = node['id']
                     # Recursively add children
@@ -305,7 +347,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             try:
                 db_node_id = create_node(self.project_id, parent_node_id, 'folder', name)
                 # Add to tree
-                tree_id = self.tree.insert(parent_tree_id, "end", text=name, open=True)
+                tree_id = self.tree.insert(parent_tree_id, "end", text=f"▸  {name}", open=True)
                 self.node_id_to_tree_id[db_node_id] = tree_id
                 self.tree_id_to_node_id[tree_id] = db_node_id
             except ValueError as e:
@@ -344,7 +386,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             try:
                 db_node_id = create_node(self.project_id, parent_node_id, 'subpage', name)
                 # Add to tree
-                tree_id = self.tree.insert(parent_tree_id, "end", text=name)
+                tree_id = self.tree.insert(parent_tree_id, "end", text=f"□  {name}")
                 self.node_id_to_tree_id[db_node_id] = tree_id
                 self.tree_id_to_node_id[tree_id] = db_node_id
                 # Initialize empty content
@@ -384,7 +426,7 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             
             try:
                 db_node_id = create_node(self.project_id, parent_node_id, 'flowchart', name)
-                tree_id = self.tree.insert(parent_tree_id, "end", text=name)
+                tree_id = self.tree.insert(parent_tree_id, "end", text=f"◇  {name}")
                 self.node_id_to_tree_id[db_node_id] = tree_id
                 self.tree_id_to_node_id[tree_id] = db_node_id
             except ValueError as e:
@@ -410,7 +452,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             
             try:
                 rename_node(node_info['id'], new_name)
-                self.tree.item(tree_id, text=new_name)
+                icon = {'folder': '▸', 'subpage': '□', 'flowchart': '◇'}.get(node_info['node_type'], '·')
+                self.tree.item(tree_id, text=f"{icon}  {new_name}")
             except Exception as e:
                 messagebox.showerror("Rename Failed", str(e), parent=self.root)
 
@@ -485,6 +528,42 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             except Exception as exc:
                 messagebox.showerror('Export failed', str(exc), parent=self.root)
 
+        def export_project_text(self):
+            """Export the full project tree and page content as portable UTF-8 text."""
+            self.save_current_page()
+            title = self.parent_card.get_title() if self.parent_card else self.project_data.get('title', 'Project')
+            safe = ''.join(c if c.isalnum() or c in ' ._-' else '_' for c in title)
+            path = filedialog.asksaveasfilename(parent=self.root, title='Export plain text',
+                defaultextension='.txt', initialfile=f'{safe}.txt', filetypes=[('Text files', '*.txt')])
+            if not path:
+                return
+            nodes = get_all_nodes_for_project(self.project_id)
+            children = {}
+            for node in nodes:
+                children.setdefault(node['parent_id'], []).append(node)
+            lines = [title, '=' * len(title), '']
+            def append_nodes(parent_id, depth=0):
+                for node in children.get(parent_id, []):
+                    marker = {'folder':'[Folder]', 'subpage':'[Page]', 'flowchart':'[Flowchart]'}.get(node['node_type'], '')
+                    lines.append(f"{'  ' * depth}{marker} {node['name']}")
+                    if node['node_type'] == 'subpage':
+                        dump = load_subpage(node['id']) or {}
+                        body = dump if isinstance(dump, str) else dump.get('content', '')
+                        lines.extend(('  ' * (depth + 1) + line) for line in body.splitlines())
+                        lines.append('')
+                    append_nodes(node['id'], depth + 1)
+            append_nodes(None)
+            try:
+                with open(path, 'w', encoding='utf-8', newline='\n') as output:
+                    output.write('\n'.join(lines).rstrip() + '\n')
+                messagebox.showinfo('Export complete', f'Project saved to:\n{path}', parent=self.root)
+            except OSError as exc:
+                messagebox.showerror('Export failed', str(exc), parent=self.root)
+
+        def open_project_planner(self):
+            from productivity import open_planner
+            open_planner(self.root, self.project_id)
+
         def on_tree_select(self, event):
             """Handle tree item selection"""
             node_info, tree_id = self.get_selected_node_info()
@@ -538,9 +617,18 @@ def create_project_manager(parent, project_data=None, parent_card=None):
             if self.current_editor_frame:
                 self.current_editor_frame.destroy()
             
-            frame = tk.Frame(self.editor_container, bg='#222222')
+            c = self.colors
+            frame = tk.Frame(self.editor_container, bg=c['app'])
             frame.pack(fill='both', expand=True)
             self.current_editor_frame = frame
+
+            page = get_node(node_id) or {}
+            page_header = tk.Frame(frame, bg=c['app'])
+            page_header.pack(side='top', fill='x', padx=34, pady=(22, 4))
+            tk.Label(page_header, text=page.get('name', 'Untitled'), bg=c['app'], fg=c['text'],
+                     font=('Segoe UI', 20, 'bold'), anchor='w').pack(side='left')
+            tk.Label(page_header, text='Saved locally · encrypted', bg=c['app'], fg=c['muted'],
+                     font=('Segoe UI', 8), anchor='e').pack(side='right', pady=(8, 0))
         
             editor = create_text_editor(parent=frame)
             self.current_editor = editor
@@ -552,7 +640,17 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
             formatter = TextFormatter(text)
             self.formatter = formatter
-            self.setup_text_widget_bindings(text)
+            def rich_paste(event=None):
+                from rich_clipboard import paste_with_formatting
+                if paste_with_formatting(text, formatter):
+                    self.schedule_save()
+                    return True if event is None else 'break'
+                return False if event is None else None
+
+            self.setup_text_widget_bindings(text, rich_paste)
+
+            text.bind('<Control-v>', rich_paste)
+            text.bind('<Control-V>', rich_paste)
 
             def _fmt(op):
                 def handler(event=None):
@@ -627,17 +725,18 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                 except:
                     return (0, 0)
                 
-            toolbar = tk.Frame(frame, bg='#181818', height=76)
-            toolbar.pack(side='top', fill='x', pady=(0, 6))
+            toolbar = tk.Frame(frame, bg=c['panel'], height=84,
+                               highlightbackground=c['border'], highlightthickness=1)
+            toolbar.pack(side='top', fill='x', padx=24, pady=(8, 6))
             toolbar.pack_propagate(False)
-            toolbar_top = tk.Frame(toolbar, bg='#181818')
-            toolbar_top.pack(fill='x')
-            toolbar_bottom = tk.Frame(toolbar, bg='#181818')
-            toolbar_bottom.pack(fill='x')
+            toolbar_top = tk.Frame(toolbar, bg=c['panel'])
+            toolbar_top.pack(fill='x', padx=8, pady=(6, 2))
+            toolbar_bottom = tk.Frame(toolbar, bg=c['panel'])
+            toolbar_bottom.pack(fill='x', padx=8, pady=(2, 6))
 
             btn_style = {
-                'bg': '#252525', 'fg': '#d0d0d0',
-                'activebackground': '#353535', 'activeforeground': 'white',
+                'bg': c['panel'], 'fg': c['text'],
+                'activebackground': c['hover'], 'activeforeground': c['text'],
                 'relief': 'flat', 'bd': 0,
                 'font': ('Segoe UI', 10), 'padx': 14, 'pady': 6,
                 'cursor': 'hand2', 'highlightthickness': 0
@@ -809,9 +908,9 @@ def create_project_manager(parent, project_data=None, parent_card=None):
                         text.window_create("end", window=label)
 
             # Add the 3 buttons
-            tk.Button(toolbar_top, text="Image", command=lambda: insert_new_media('image'), **btn_style).pack(side='left', padx=3)
-            tk.Button(toolbar_top, text="Video", command=lambda: insert_new_media('video'), **btn_style).pack(side='left', padx=3)
-            tk.Button(toolbar_top, text="Document", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=3)
+            tk.Button(toolbar_top, text="＋ Image", command=lambda: insert_new_media('image'), **btn_style).pack(side='left', padx=2)
+            tk.Button(toolbar_top, text="＋ Video", command=lambda: insert_new_media('video'), **btn_style).pack(side='left', padx=2)
+            tk.Button(toolbar_top, text="＋ File", command=lambda: insert_new_media('doc'), **btn_style).pack(side='left', padx=2)
 
             # Font family selector
             # Populate directly from the fonts actually installed on this OS
@@ -938,6 +1037,28 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
             more_menu.add_command(label='Insert link…', command=insert_link)
             more_menu.add_command(label='Remove link', command=_fmt(formatter.remove_link))
+            more_menu.add_separator()
+            more_menu.add_command(
+                label='Preview Markdown',
+                command=lambda: __import__('markdown_preview').show_markdown_preview(
+                    self.root, text.get('1.0', 'end-1c'), 'Markdown preview'))
+
+            status_bar = tk.Frame(frame, bg=c['panel'], height=28)
+            status_bar.pack(side='bottom', fill='x')
+            word_status = tk.Label(status_bar, text='', bg=c['panel'], fg=c['muted'],
+                                   font=('Segoe UI', 8))
+            word_status.pack(side='right', padx=18)
+            paste_status = tk.Label(status_bar, text='Ctrl+V preserves formatting when available',
+                                    bg=c['panel'], fg=c['subtle'], font=('Segoe UI', 8))
+            paste_status.pack(side='left', padx=18)
+            def update_word_status(event=None):
+                try:
+                    value = text.get('1.0', 'end-1c')
+                    word_status.configure(text=f"{len(value.split())} words  ·  {len(value)} characters")
+                except tk.TclError:
+                    pass
+            text.bind('<KeyRelease>', update_word_status, add='+')
+            update_word_status()
 
             def apply_font_family(family):
                 """Apply font family using formatter (FIXED)"""
@@ -1349,8 +1470,8 @@ def create_project_manager(parent, project_data=None, parent_card=None):
     # Create UI in a separate window
     window = tk.Toplevel()
     window.title(project_data.get('title', 'Project') if project_data else "Project")
-    window.geometry("1000x700")
-    window.minsize(800, 500)
+    window.geometry("1200x760")
+    window.minsize(960, 620)
     if getattr(sys, 'frozen', False):
         base_dir = sys._MEIPASS
     else:
@@ -1363,9 +1484,9 @@ def create_project_manager(parent, project_data=None, parent_card=None):
 
     # Center window
     window.update_idletasks()
-    x = (window.winfo_screenwidth() // 2) - (1000 // 2)
-    y = (window.winfo_screenheight() // 2) - (700 // 2)
-    window.geometry(f"1000x700+{x}+{y}")
+    x = (window.winfo_screenwidth() // 2) - (1200 // 2)
+    y = (window.winfo_screenheight() // 2) - (760 // 2)
+    window.geometry(f"1200x760+{x}+{y}")
 
     # Main container inside new window
     main_frame = ttk.Frame(window)

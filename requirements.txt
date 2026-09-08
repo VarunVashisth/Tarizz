@@ -1,0 +1,9 @@
+# Tarizz runtime dependencies
+# Tkinter is part of Python but may need to be installed through your OS package manager.
+
+cryptography>=41.0
+opencv-python>=4.8
+Pillow>=10.0
+PyMuPDF>=1.23
+PyQt6>=6.7
+reportlab>=4.0

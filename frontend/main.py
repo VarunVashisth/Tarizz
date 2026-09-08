@@ -102,18 +102,19 @@ class ProjectCard:
         self.project_data = {}
         self.db_id = None
 
+        c = dashboard.colors
+        self.card_bg = c['panel']
         self.frame = tk.Frame(
             dashboard.canvas_frame, 
-            bg='#3a3a3a', 
-
-            relief='raised', 
+            bg=self.card_bg,
+            relief='flat',
             bd=0,
             padx=15, 
             pady=15
         )
         
         self.frame.configure(
-            highlightbackground='#4a4a4a',
+            highlightbackground=c['border'],
             highlightthickness=1
         )
         
@@ -122,18 +123,18 @@ class ProjectCard:
         
     def create_content(self, title, description):
         """Create card content with editable labels"""
-        self.title_container = tk.Frame(self.frame, bg='#3a3a3a', height=25)
+        self.title_container = tk.Frame(self.frame, bg=self.card_bg, height=25)
         self.title_container.pack(fill='x', pady=(0, 8))
         self.title_container.pack_propagate(False)
         
-        self.desc_container = tk.Frame(self.frame, bg='#3a3a3a', height=60)
+        self.desc_container = tk.Frame(self.frame, bg=self.card_bg, height=60)
         self.desc_container.pack(fill='both', expand=True)
         self.desc_container.pack_propagate(False)
         
         self.title_editor = EditableLabel(
             self.title_container, title, 
             font=('Segoe UI', 12, 'bold'), 
-            fg='white', bg='#3a3a3a',
+            fg=self.dashboard.colors['text'], bg=self.card_bg,
             on_change_callback=self._on_card_edited
         )
         self.title_editor.pack(fill='both', expand=True)
@@ -141,7 +142,7 @@ class ProjectCard:
         self.desc_editor = EditableLabel(
             self.desc_container, description,
             font=('Segoe UI', 9),
-            fg='#cccccc', bg='#3a3a3a',
+            fg=self.dashboard.colors['muted'], bg=self.card_bg,
             on_change_callback=self._on_card_edited
         )
         self.desc_editor.pack(fill='both', expand=True)
@@ -191,7 +192,7 @@ class ProjectCard:
         self.drag_start_x = event.x_root
         self.drag_start_y = event.y_root
         
-        self.frame.configure(bg='#4a4a4a')
+        self.frame.configure(bg=self.dashboard.colors['raised'])
         self.frame.lift()
         
         self.original_index = self.dashboard.get_card_index(self)
@@ -243,7 +244,7 @@ class ProjectCard:
             
         self.is_dragging = False
         
-        self.frame.configure(bg='#3a3a3a')
+        self.frame.configure(bg=self.card_bg)
         
         self.dashboard.arrange_cards()
         
@@ -264,15 +265,15 @@ class ProjectCard:
     def on_hover_enter(self, event):
         """Hover effect"""
         if not self.is_dragging and self != self.dashboard.selected_card:
-            self.frame.configure(highlightthickness=2, highlightbackground='#666666')
+            self.frame.configure(highlightthickness=2, highlightbackground=self.dashboard.colors['subtle'])
             
     def on_hover_leave(self, event):
         """Remove hover effect"""
         if not self.is_dragging:
             if self == self.dashboard.selected_card:
-                self.frame.configure(highlightthickness=2, highlightbackground='#0078d4')
+                self.frame.configure(highlightthickness=2, highlightbackground=self.dashboard.colors['accent'])
             else:
-                self.frame.configure(highlightthickness=1, highlightbackground='#4a4a4a')
+                self.frame.configure(highlightthickness=1, highlightbackground=self.dashboard.colors['border'])
     
     def animate_to_position(self, target_x, target_y, callback=None):
         """Smooth animation to target position"""
@@ -339,8 +340,8 @@ class ProjectDashboard:
                 self.cards.append(card)
         else:
             new_id = create_project(
-                title = "Sampple Project",
-                description = "Welcome to Tarriz",
+                title = "Sample Project",
+                description = "Welcome to Tarizz",
                 card_order = 0
             )
 
@@ -359,7 +360,10 @@ class ProjectDashboard:
         """Configure main window"""
         self.root.title(f"Tarizz - Vault: {self.auth_manager}")
         self.root.geometry("1200x700")
-        self.root.configure(bg='#1a1a1a')
+        from ui_theme import COLORS, configure_ttk
+        self.colors = COLORS
+        configure_ttk(self.root)
+        self.root.configure(bg=COLORS['app'])
         self.root.minsize(900, 600)
 
 
@@ -395,46 +399,62 @@ class ProjectDashboard:
         
     def create_sidebar(self):
         """Create left sidebar with controls"""
-        self.sidebar = tk.Frame(self.root, bg='#2a2a2a', width=200)
-        self.sidebar.pack(side='left', fill='y', padx=(10, 5), pady=10)
+        c = self.colors
+        self.sidebar = tk.Frame(self.root, bg=c['sidebar'], width=224,
+                                highlightbackground=c['border'], highlightthickness=1)
+        self.sidebar.pack(side='left', fill='y')
         self.sidebar.pack_propagate(False)
         
         title = tk.Label(
-            self.sidebar, text="Projects", 
-            bg='#2a2a2a', fg='white', 
-            font=('Segoe UI', 16, 'bold')
+            self.sidebar, text="TARIZZ",
+            bg=c['sidebar'], fg=c['text'],
+            font=('Segoe UI', 15, 'bold'), anchor='w'
         )
-        title.pack(pady=(20, 30))
-        
+        title.pack(fill='x', padx=18, pady=(20, 4))
+        tk.Label(self.sidebar, text='Your private workspace', bg=c['sidebar'], fg=c['muted'],
+                 font=('Segoe UI', 9), anchor='w').pack(fill='x', padx=18, pady=(0, 22))
+
         btn_style = {
-            'bg': '#404040', 'fg': 'white', 
-            'font': ('Segoe UI', 10), 'relief': 'flat',
-            'padx': 20, 'pady': 12, 'width': 15,
-            'cursor': 'hand2', 'activebackground': '#505050',
-            'activeforeground': 'white'
+            'bg': c['sidebar'], 'fg': c['text'], 'anchor': 'w',
+            'font': ('Segoe UI', 10), 'relief': 'flat', 'bd': 0,
+            'padx': 18, 'pady': 10, 'width': 19,
+            'cursor': 'hand2', 'activebackground': c['hover'],
+            'activeforeground': c['text']
         }
         
         self.add_btn = tk.Button(
-            self.sidebar, text="+ Add Project",
+            self.sidebar, text="＋  New project",
             command=self.add_new_project, **btn_style
         )
         self.add_btn.pack(pady=(0, 10))
 
         self.import_btn = tk.Button(
-            self.sidebar, text="Import Project",
+            self.sidebar, text="⇩  Import project",
             command=self.import_project_package, **btn_style
         )
         self.import_btn.pack(pady=(0, 10))
 
         self.export_package_btn = tk.Button(
-            self.sidebar, text="Export Selected",
+            self.sidebar, text="⇧  Export selected",
             command=self.export_selected_package,
             state='disabled', **btn_style
         )
         self.export_package_btn.pack(pady=(0, 10))
+
+        self.planner_btn = tk.Button(
+            self.sidebar, text="▦  Calendar & tasks",
+            command=self.open_planner, **btn_style
+        )
+        self.planner_btn.pack(pady=(0, 10))
+
+        self.diary_btn = tk.Button(
+            self.sidebar, text="◈  Private diary",
+            command=self.open_diary, **btn_style
+        )
+        self.diary_btn.pack(pady=(0, 10))
         
         self.delete_btn = tk.Button(
-            self.sidebar, text="🗑 Delete Selected",
+            self.sidebar, text="×  Delete selected",
             command=self.delete_selected_project,
             state='disabled', **btn_style
         )
@@ -442,32 +462,54 @@ class ProjectDashboard:
         
         self.info_label = tk.Label(
             self.sidebar, text="Click a card to select",
-            bg='#2a2a2a', fg='#888888',
+            bg=c['sidebar'], fg=c['muted'],
             font=('Segoe UI', 8), wraplength=180
         )
         self.info_label.pack(pady=20)
 
-        self.hint_label = tk.Label(
-        self.sidebar,
-        text="Hints:\n• Ctrl+h: Highlight\n• Double-click on card to open \n• Drag and drop to rearrange \n•Codeblock: '''code'''\n•bold/italc/underline: Ctrl+b/i/u",
-        bg='#2a2a2a', fg='#AAAAAA',
-        font=('Segoe UI', 8), justify='left', wraplength=180
-        )
-        self.hint_label.pack(side='bottom', pady=10)
+        self.hint_label = tk.Label(self.sidebar, text="Double-click a project to open\nCtrl+B / I / U to format text",
+            bg=c['sidebar'], fg=c['subtle'], font=('Segoe UI', 8), justify='left', wraplength=185)
+        self.hint_label.pack(side='bottom', padx=18, pady=16, anchor='w')
 
 
         
     def create_canvas(self):
         """Create main canvas area"""
-        self.canvas_container = tk.Frame(self.root, bg='#1a1a1a')
-        self.canvas_container.pack(side='right', fill='both', expand=True, padx=(5, 10), pady=10)
-        
-        self.canvas_frame = tk.Frame(self.canvas_container, bg='#1a1a1a')
-        self.canvas_frame.pack(fill='both', expand=True)
+        c = self.colors
+        self.canvas_container = tk.Frame(self.root, bg=c['app'])
+        self.canvas_container.pack(side='right', fill='both', expand=True)
+
+        header = tk.Frame(self.canvas_container, bg=c['app'])
+        header.pack(fill='x', padx=34, pady=(28, 18))
+        title_box = tk.Frame(header, bg=c['app'])
+        title_box.pack(side='left')
+        tk.Label(title_box, text='Projects', bg=c['app'], fg=c['text'],
+                 font=('Segoe UI', 22, 'bold')).pack(anchor='w')
+        tk.Label(title_box, text='Notes, plans, and documentation in one place', bg=c['app'], fg=c['muted'],
+                 font=('Segoe UI', 9)).pack(anchor='w', pady=(3, 0))
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add('write', lambda *_: self.arrange_cards())
+        search = tk.Entry(header, textvariable=self.search_var, bg=c['panel'], fg=c['text'],
+                          insertbackground=c['text'], relief='flat', width=26, font=('Segoe UI', 10),
+                          highlightbackground=c['border'], highlightthickness=1)
+        search.pack(side='right', ipady=9, padx=(10, 0))
+        search.insert(0, '')
+
+        self.canvas_frame = tk.Frame(self.canvas_container, bg=c['app'])
+        self.canvas_frame.pack(fill='both', expand=True, padx=14)
         
     def add_new_project(self):
         """Add a new empty project card"""
         self.add_card("New Project", "Click to edit description")
+
+    def open_planner(self):
+        from productivity import open_planner
+        project_id = getattr(self.selected_card, 'db_id', None) if self.selected_card else None
+        open_planner(self.root, project_id)
+
+    def open_diary(self):
+        from productivity import open_diary
+        open_diary(self.root)
 
     def export_selected_package(self):
         if not self.selected_card or not getattr(self.selected_card, 'db_id', None):
@@ -596,6 +638,12 @@ class ProjectDashboard:
         if not self.cards:
             return
             
+        query = getattr(self, 'search_var', tk.StringVar(value='')).get().strip().lower()
+        visible = [card for card in self.cards if not query or query in card.get_title().lower()
+                   or query in card.get_description().lower()]
+        for card in self.cards:
+            if card not in visible:
+                card.frame.place_forget()
         cols = self.get_columns()
         card_width = 280
         card_height = 120
@@ -603,7 +651,7 @@ class ProjectDashboard:
         spacing_x = 20
         spacing_y = 20
         
-        for i, card in enumerate(self.cards):
+        for i, card in enumerate(visible):
             row = i // cols
             col = i % cols
             
@@ -636,10 +684,10 @@ class ProjectDashboard:
     def select_card(self, card):
         """Select a card"""
         if self.selected_card:
-            self.selected_card.frame.configure(highlightbackground='#4a4a4a', highlightthickness=1)
+            self.selected_card.frame.configure(highlightbackground=self.colors['border'], highlightthickness=1)
             
         self.selected_card = card
-        card.frame.configure(highlightbackground='#0078d4', highlightthickness=2)
+        card.frame.configure(highlightbackground=self.colors['accent'], highlightthickness=2)
         self.update_selection_ui()
         
     def update_selection_ui(self):
@@ -756,8 +804,13 @@ def main():
     set_db_path(auth_manager.get_database_path())
     Database.set_session_key(auth_manager.get_session_key())
 
-    app = ProjectDashboard(auth_manager)
-    app.run()
+    try:
+        from qt_app_v2 import run_qt_app
+    except ImportError as exc:
+        if exc.name == 'PyQt6':
+            raise RuntimeError('PyQt6 is required. Install dependencies with: pip install -r requirements.txt') from exc
+        raise
+    run_qt_app(auth_manager)
 
 
 if __name__ == "__main__":
