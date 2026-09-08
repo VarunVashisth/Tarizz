@@ -25,11 +25,16 @@ class _AuthWindow:
     def __init__(self, auth_manager, create_mode=False):
         self.auth_manager = auth_manager
         self.authenticated = False
+        self.c = {
+            'bg':'#0e0e11','card':'#151519','field':'#1d1d23','border':'#2a2932',
+            'text':'#f4f3f8','muted':'#9f9eaa','accent':'#9587ff','accent_hover':'#8171ef',
+            'danger':'#ff7a7a','success':'#57c99c','warning':'#ffb86b'
+        }
 
         self.root = tk.Tk()
-        self.root.title("Tarizz – Sign In")
-        self.root.geometry("440x640")
-        self.root.configure(bg="#1a1a1a")
+        self.root.title("Tarizz — Private Workspace")
+        self.root.geometry("480x680")
+        self.root.configure(bg=self.c['bg'])
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         if getattr(sys, "frozen", False):
@@ -48,7 +53,9 @@ class _AuthWindow:
         self.root.update_idletasks()
         sx = self.root.winfo_screenwidth()
         sy = self.root.winfo_screenheight()
-        self.root.geometry(f"+{(sx - 440) // 2}+{(sy - 640) // 2}")
+        self.root.geometry(f"+{(sx - 480) // 2}+{(sy - 680) // 2}")
+
+        style=ttk.Style(self.root);style.theme_use('clam');style.configure('Auth.TCombobox',fieldbackground=self.c['field'],background=self.c['field'],foreground=self.c['text'],arrowcolor=self.c['muted'],bordercolor=self.c['border'],padding=7);style.map('Auth.TCombobox',fieldbackground=[('readonly',self.c['field'])],foreground=[('readonly',self.c['text'])])
 
         self._build_ui()
 
@@ -59,18 +66,19 @@ class _AuthWindow:
     def _build_ui(self):
         self._clear_body()
 
+        tk.Label(self.root,text="PRIVATE  ·  LOCAL  ·  ENCRYPTED",font=("Segoe UI",8,"bold"),fg=self.c['accent'],bg=self.c['bg']).pack(pady=(30,5))
         tk.Label(
-            self.root, text="🔒 Tarizz",
-            font=("Segoe UI", 24, "bold"), fg="white", bg="#1a1a1a"
-        ).pack(pady=(28, 4))
+            self.root, text="TARIZZ",
+            font=("Segoe UI", 25, "bold"), fg=self.c['text'], bg=self.c['bg']
+        ).pack(pady=(0, 3))
 
         tk.Label(
-            self.root, text="Your private workspace",
-            font=("Segoe UI", 10), fg="#888888", bg="#1a1a1a"
-        ).pack(pady=(0, 16))
+            self.root, text="Your private workspace, ready when you are.",
+            font=("Segoe UI", 10), fg=self.c['muted'], bg=self.c['bg']
+        ).pack(pady=(0, 20))
 
-        card = tk.Frame(self.root, bg="#2a2a2a", padx=28, pady=22)
-        card.pack(padx=36, pady=0, fill="x")
+        card = tk.Frame(self.root, bg=self.c['card'], padx=30, pady=24,highlightbackground=self.c['border'],highlightthickness=1)
+        card.pack(padx=42, pady=0, fill="x")
 
         if self.reset_mode:
             self._build_reset(card)
@@ -78,22 +86,23 @@ class _AuthWindow:
             self._build_create(card)
         else:
             self._build_login(card)
+        tk.Label(self.root,text="YOUR VAULT NEVER LEAVES THIS DEVICE",font=("Segoe UI",8,"bold"),fg='#666570',bg=self.c['bg']).pack(side='bottom',pady=20)
 
     def _label(self, parent, text):
         tk.Label(
             parent, text=text, font=("Segoe UI", 10),
-            fg="#aaaaaa", bg="#2a2a2a", anchor="w"
+            fg=self.c['muted'], bg=self.c['card'], anchor="w"
         ).pack(fill="x", pady=(8, 0))
 
     def _text_entry(self, parent, show=None):
         kwargs = dict(
             font=("Segoe UI", 12),
-            bg="#333333", fg="white",
-            insertbackground="white",
+            bg=self.c['field'], fg=self.c['text'],
+            insertbackground=self.c['text'],
             relief="flat", bd=0,
             highlightthickness=1,
-            highlightbackground="#444444",
-            highlightcolor="#0078d4",
+            highlightbackground=self.c['border'],
+            highlightcolor=self.c['accent'],
         )
         if show is not None:
             kwargs["show"] = show
@@ -136,13 +145,13 @@ class _AuthWindow:
         entry.bind('<Control-Shift-Right>', lambda _e: move(1, True))
 
     def _make_button(self, parent, text, command, secondary=False):
-        bg = "#404040" if secondary else "#0078d4"
-        active = "#505050" if secondary else "#006cbd"
+        bg = self.c['field'] if secondary else self.c['accent']
+        active = '#2a2932' if secondary else self.c['accent_hover']
         btn = tk.Button(
             parent, text=text, command=command,
             font=("Segoe UI", 11, "bold"),
-            bg=bg, fg="white",
-            activebackground=active, activeforeground="white",
+            bg=bg, fg=self.c['text'],
+            activebackground=active, activeforeground=self.c['text'],
             relief="flat", bd=0, cursor="hand2",
         )
         btn.pack(fill="x", ipady=9, pady=(8, 0))
@@ -151,7 +160,7 @@ class _AuthWindow:
     def _build_create(self, card):
         tk.Label(
             card, text="Create Account",
-            font=("Segoe UI", 13, "bold"), fg="white", bg="#2a2a2a"
+            font=("Segoe UI", 16, "bold"), fg=self.c['text'], bg=self.c['card']
         ).pack(pady=(0, 8))
 
         self._label(card, "Username")
@@ -165,7 +174,7 @@ class _AuthWindow:
 
         self.strength_label = tk.Label(
             card, text="At least 8 characters, 1 uppercase, 1 digit",
-            font=("Segoe UI", 9), fg="#888888", bg="#2a2a2a", anchor="w", wraplength=340
+            font=("Segoe UI", 9), fg=self.c['muted'], bg=self.c['card'], anchor="w", wraplength=340
         )
         self.strength_label.pack(fill="x", pady=(4, 0))
         self.pwd_entry.bind("<KeyRelease>", self._on_pwd_keystroke)
@@ -174,7 +183,7 @@ class _AuthWindow:
         self.question_var = tk.StringVar(value=SECURITY_QUESTIONS[0])
         combo = ttk.Combobox(
             card, textvariable=self.question_var,
-            values=SECURITY_QUESTIONS, state="readonly"
+            values=SECURITY_QUESTIONS, state="readonly",style='Auth.TCombobox'
         )
         combo.pack(fill="x", pady=(2, 0), ipady=4)
 
@@ -183,7 +192,7 @@ class _AuthWindow:
 
         self.error_label = tk.Label(
             card, text="", font=("Segoe UI", 9),
-            fg="#ff6b6b", bg="#2a2a2a", wraplength=340, justify="left"
+            fg=self.c['danger'], bg=self.c['card'], wraplength=340, justify="left"
         )
         self.error_label.pack(fill="x", pady=(8, 0))
 
@@ -194,7 +203,7 @@ class _AuthWindow:
     def _build_login(self, card):
         tk.Label(
             card, text="Welcome Back",
-            font=("Segoe UI", 13, "bold"), fg="white", bg="#2a2a2a"
+            font=("Segoe UI", 16, "bold"), fg=self.c['text'], bg=self.c['card']
         ).pack(pady=(0, 8))
 
         stored = self.auth_manager.stored_username() or ""
@@ -209,7 +218,7 @@ class _AuthWindow:
 
         self.status_label = tk.Label(
             card, text="", font=("Segoe UI", 9),
-            fg="#ff6b6b", bg="#2a2a2a", anchor="w", wraplength=340
+            fg=self.c['danger'], bg=self.c['card'], anchor="w", wraplength=340
         )
         self.status_label.pack(fill="x", pady=(6, 4))
 
@@ -221,7 +230,7 @@ class _AuthWindow:
     def _build_reset(self, card):
         tk.Label(
             card, text="Reset Password",
-            font=("Segoe UI", 13, "bold"), fg="white", bg="#2a2a2a"
+            font=("Segoe UI", 16, "bold"), fg=self.c['text'], bg=self.c['card']
         ).pack(pady=(0, 8))
 
         stored = self.auth_manager.stored_username() or ""
@@ -235,7 +244,7 @@ class _AuthWindow:
         q_text = question or "Enter your username to load the security question."
         self.question_display = tk.Label(
             card, text=q_text, font=("Segoe UI", 10),
-            fg="#dddddd", bg="#2a2a2a", wraplength=340, justify="left"
+            fg=self.c['text'], bg=self.c['card'], wraplength=340, justify="left"
         )
         self.question_display.pack(fill="x", pady=(10, 0))
 
@@ -259,7 +268,7 @@ class _AuthWindow:
 
         self.status_label = tk.Label(
             card, text="", font=("Segoe UI", 9),
-            fg="#ff6b6b", bg="#2a2a2a", wraplength=340, justify="left"
+            fg=self.c['danger'], bg=self.c['card'], wraplength=340, justify="left"
         )
         self.status_label.pack(fill="x", pady=(8, 0))
 
@@ -280,11 +289,11 @@ class _AuthWindow:
         pwd = self.pwd_entry.get()
         ok, reason = SimpleAuthManager.validate_password_strength(pwd)
         if not pwd:
-            self.strength_label.config(text="At least 8 characters, 1 uppercase, 1 digit", fg="#888888")
+            self.strength_label.config(text="At least 8 characters, 1 uppercase, 1 digit", fg=self.c['muted'])
         elif ok:
-            self.strength_label.config(text="✓ Password looks good", fg="#4caf50")
+            self.strength_label.config(text="✓ Password looks good", fg=self.c['success'])
         else:
-            self.strength_label.config(text=reason, fg="#ff9800")
+            self.strength_label.config(text=reason, fg=self.c['warning'])
 
     @staticmethod
     def validate_username(username: str) -> tuple:

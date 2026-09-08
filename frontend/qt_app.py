@@ -134,8 +134,8 @@ class RichEditor(QWidget):
         self.setObjectName('root')
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(0)
         header = QFrame(objectName='editorHeader'); row = QHBoxLayout(header); row.setContentsMargins(34, 18, 24, 12)
-        title = QLabel(node['name'], objectName='pageTitle'); row.addWidget(title); row.addStretch()
-        row.addWidget(QLabel('Local  ·  Encrypted', objectName='muted')); layout.addWidget(header)
+        head=QVBoxLayout();head.setSpacing(1);head.addWidget(QLabel('DOCUMENT',objectName='eyebrow'));title = QLabel(node['name'], objectName='pageTitle');head.addWidget(title);row.addLayout(head); row.addStretch()
+        row.addWidget(QLabel('●  LOCAL  ·  ENCRYPTED', objectName='badge')); layout.addWidget(header)
         self.toolbar = QToolBar(); self.toolbar.setMovable(False); layout.addWidget(self.toolbar)
         self.edit = MediaTextEdit(); self.edit.setAcceptRichText(True); self.edit.setPlaceholderText('Start writing…')
         self.edit.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.edit.customContextMenuRequested.connect(self._context_menu);self.edit.viewport().installEventFilter(self)
@@ -162,19 +162,19 @@ class RichEditor(QWidget):
         self.toolbar.addSeparator()
         styles = QComboBox(); styles.addItems(['Paragraph', 'Title', 'Heading 1', 'Heading 2', 'Heading 3'])
         styles.currentTextChanged.connect(self._set_style); self.toolbar.addWidget(styles)
-        self._action('• List', self._bullet_list, tip='Bulleted list')
-        self._action('1. List', self._number_list, tip='Numbered list')
-        self._action('Link', self._link, 'Ctrl+K')
-        self._action('Color', self._color)
-        self._action('{ } Code block', self._code_block, 'Ctrl+Alt+C')
+        self._action('•', self._bullet_list, tip='Bulleted list')
+        self._action('1.', self._number_list, tip='Numbered list')
+        self._action('↗', self._link, 'Ctrl+K',tip='Insert link')
+        self._action('A', self._color,tip='Text color')
+        self._action('{ }', self._code_block, 'Ctrl+Alt+C',tip='Code block')
         self.toolbar.addSeparator()
-        self._action('Image', lambda:self._insert_media('image'))
-        self._action('Video', lambda:self._insert_media('video'))
-        self._action('Document', lambda:self._insert_media('doc'))
+        self._action('▧  Image', lambda:self._insert_media('image'),tip='Embed image')
+        self._action('▶  Video', lambda:self._insert_media('video'),tip='Embed video')
+        self._action('▤  File', lambda:self._insert_media('doc'),tip='Embed document')
         self.toolbar.addSeparator()
-        self._action('Markdown preview', self.toggle_preview, 'Ctrl+Shift+M', True)
-        self._action('Export page', self._export_page, 'Ctrl+Shift+E')
-        self._action('Paste plain', self.paste_plain, 'Ctrl+Shift+V')
+        self._action('◫  Preview', self.toggle_preview, 'Ctrl+Shift+M', True,'Markdown preview')
+        self._action('⇧  Export', self._export_page, 'Ctrl+Shift+E',tip='Export this page')
+        self._action('Tx', self.paste_plain, 'Ctrl+Shift+V',tip='Paste without formatting')
 
     def _set_style(self, name):
         sizes = {'Paragraph':12, 'Title':26, 'Heading 1':22, 'Heading 2':18, 'Heading 3':15}
@@ -434,13 +434,17 @@ class FlowchartPage(QWidget):
     def __init__(self, db, node):
         super().__init__();self.db,self.node=db,node;self.loading=True
         layout=QVBoxLayout(self);layout.setContentsMargins(0,0,0,0);layout.setSpacing(0)
+        header=QFrame(objectName='editorHeader');header_row=QHBoxLayout(header);header_row.setContentsMargins(22,11,22,11);head=QVBoxLayout();head.setSpacing(1);head.addWidget(QLabel('VISUAL CANVAS',objectName='eyebrow'));head.addWidget(QLabel(node['name'],objectName='pageTitle'));header_row.addLayout(head);header_row.addStretch();header_row.addWidget(QLabel('Select two shapes, then connect them',objectName='badge'));layout.addWidget(header)
         tools=QToolBar();tools.setMovable(False);layout.addWidget(tools)
         self.scene=QGraphicsScene(-1500,-1000,3000,2000,self);self.view=DiagramView(self.scene);layout.addWidget(self.view,1);self.refreshing=False
-        actions=[('▣ Rectangle',self.rect),('◯ Oval',self.ellipse),('◇ Diamond',self.diamond),('T Text',self.text),('— Line',lambda:self.connector(False)),('→ Arrow',lambda:self.connector(True)),('Detach',self.detach),('⌫ Delete',self.delete),('＋ Zoom',lambda:self.view.scale(1.2,1.2)),('− Zoom',lambda:self.view.scale(.8,.8)),('Fit',self.fit),('Export PNG',self.export_png)]
+        actions=[('▣  Rectangle',self.rect),('◯  Oval',self.ellipse),('◇  Diamond',self.diamond),('T  Text',self.text),('—  Line',lambda:self.connector(False)),('→  Arrow',lambda:self.connector(True)),('⌁  Detach',self.detach),('⌫',self.delete),('＋',lambda:self.view.scale(1.2,1.2)),('−',lambda:self.view.scale(.8,.8)),('Fit',self.fit),('⇧  PNG',self.export_png)]
         for label,fn in actions:a=tools.addAction(label);a.triggered.connect(fn)
         delete_action=QAction(self);delete_action.setShortcut(QKeySequence.StandardKey.Delete);delete_action.triggered.connect(self.delete);self.addAction(delete_action)
-        self.timer=QTimer(self);self.timer.setSingleShot(True);self.timer.timeout.connect(self.save);self.scene.changed.connect(self.scene_changed)
+        status=QFrame(objectName='status');status_row=QHBoxLayout(status);status_row.setContentsMargins(18,6,18,6);self.selection_status=QLabel('Nothing selected',objectName='muted');status_row.addWidget(self.selection_status);status_row.addStretch();status_row.addWidget(QLabel('Ctrl+click selects multiple  ·  Delete removes connections',objectName='muted'));layout.addWidget(status)
+        self.timer=QTimer(self);self.timer.setSingleShot(True);self.timer.timeout.connect(self.save);self.scene.changed.connect(self.scene_changed);self.scene.selectionChanged.connect(self.update_selection_status)
         self.load();self.loading=False
+    def update_selection_status(self):
+        count=len(self.scene.selectedItems());self.selection_status.setText('Nothing selected' if not count else f'{count} item'+('' if count==1 else 's')+' selected')
     def scene_changed(self,*_):
         if self.loading or self.refreshing:return
         self.refreshing=True
@@ -556,41 +560,49 @@ class FlowchartPage(QWidget):
 class PlannerPage(QWidget):
     def __init__(self, db):
         super().__init__(); self.db=db
-        layout=QHBoxLayout(self); layout.setContentsMargins(24,24,24,24); layout.setSpacing(22)
-        self.calendar=QCalendarWidget(); self.calendar.setGridVisible(False); layout.addWidget(self.calendar,1)
-        right=QWidget(); r=QVBoxLayout(right); r.setContentsMargins(0,0,0,0)
-        self.heading=QLabel(objectName='pageTitle'); r.addWidget(self.heading)
+        self.setObjectName('page');layout=QHBoxLayout(self); layout.setContentsMargins(42,34,42,34); layout.setSpacing(20)
+        left=QFrame(objectName='panel');left_layout=QVBoxLayout(left);left_layout.setContentsMargins(22,22,22,22);left_layout.setSpacing(10);left_layout.addWidget(QLabel('DATE NAVIGATOR',objectName='eyebrow'));left_layout.addWidget(QLabel('Choose a day',objectName='title'));left_layout.addWidget(QLabel('Plan precisely without leaving your workspace.',objectName='muted'));self.calendar=QCalendarWidget(); self.calendar.setGridVisible(False);left_layout.addWidget(self.calendar,1);layout.addWidget(left,1)
+        right=QFrame(objectName='panel'); r=QVBoxLayout(right); r.setContentsMargins(26,22,26,22);r.setSpacing(12);top=QHBoxLayout();heading_box=QVBoxLayout();heading_box.setSpacing(2);heading_box.addWidget(QLabel('DAILY FOCUS',objectName='eyebrow'));self.heading=QLabel(objectName='pageTitle');heading_box.addWidget(self.heading);top.addLayout(heading_box);top.addStretch();self.summary=QLabel(objectName='badge');top.addWidget(self.summary);r.addLayout(top)
+        r.addWidget(QLabel('Capture a task, assign it to a project, then click once to complete it.',objectName='muted'))
         entry_row=QHBoxLayout(); self.input=QLineEdit(placeholderText='Add a task…'); self.projects=QComboBox(); self.add=button('Add',self.add_task,'primary')
         entry_row.addWidget(self.input,1); entry_row.addWidget(self.projects); entry_row.addWidget(self.add); r.addLayout(entry_row)
-        self.list=QListWidget(); r.addWidget(self.list,1); layout.addWidget(right,2)
+        self.list=QListWidget();self.list.setSpacing(3);self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu);self.list.customContextMenuRequested.connect(self.task_menu); r.addWidget(self.list,1);r.addWidget(QLabel('Tip: right-click a task to delete it',objectName='muted')); layout.addWidget(right,2)
         self.calendar.selectionChanged.connect(self.refresh); self.input.returnPressed.connect(self.add_task); self.list.itemClicked.connect(self.toggle_clicked)
         self.reload_projects(); self.refresh()
     def reload_projects(self):
         self.projects.clear(); self.projects.addItem('No project',None)
         for p in self.db.get_all_projects(): self.projects.addItem(p['title'],p['id'])
     def refresh(self):
-        day=self.calendar.selectedDate(); self.heading.setText(day.toString('dddd, d MMMM yyyy')); self.list.blockSignals(True); self.list.clear()
-        for task in self.db.get_tasks(day.toString('yyyy-MM-dd')):
+        day=self.calendar.selectedDate(); self.heading.setText(day.toString('dddd, d MMMM yyyy')); self.list.blockSignals(True); self.list.clear();tasks=self.db.get_tasks(day.toString('yyyy-MM-dd'))
+        complete=sum(bool(task['completed']) for task in tasks);self.summary.setText(f'{complete}/{len(tasks)} COMPLETE' if tasks else 'CLEAR DAY')
+        for task in tasks:
             label=task['title']+(f"  ·  {task['project_title']}" if task.get('project_title') else '')
-            item=QListWidgetItem(label); item.setData(Qt.ItemDataRole.UserRole,task['id']); item.setCheckState(Qt.CheckState.Checked if task['completed'] else Qt.CheckState.Unchecked); item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable); self.list.addItem(item)
+            item=QListWidgetItem(label); item.setData(Qt.ItemDataRole.UserRole,task['id']); item.setCheckState(Qt.CheckState.Checked if task['completed'] else Qt.CheckState.Unchecked); item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable);font=item.font();font.setStrikeOut(bool(task['completed']));item.setFont(font);self.list.addItem(item)
         self.list.blockSignals(False)
     def add_task(self):
         title=self.input.text().strip()
         if title: self.db.add_task(self.calendar.selectedDate().toString('yyyy-MM-dd'),title,self.projects.currentData()); self.input.clear(); self.refresh()
     def toggle_clicked(self,item):
         checked=item.checkState()!=Qt.CheckState.Checked;item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked);self.db.set_task_completed(item.data(Qt.ItemDataRole.UserRole),checked)
+        self.refresh()
+    def task_menu(self,pos):
+        item=self.list.itemAt(pos)
+        if not item:return
+        menu=QMenu(self);menu.addAction('Delete task',lambda:(self.db.delete_task(item.data(Qt.ItemDataRole.UserRole)),self.refresh()));menu.exec(self.list.viewport().mapToGlobal(pos))
 
 
 class DiaryPage(QWidget):
     PASSWORD_SETTING = 'diary_password_v2'
     def __init__(self, db, parent=None):
         super().__init__(parent); self.db=db; self.unlocked=False
-        layout=QVBoxLayout(self); layout.setContentsMargins(44,30,44,28)
-        top=QHBoxLayout(); top.addWidget(QLabel('Private diary',objectName='pageTitle')); top.addStretch(); self.day=QDateEdit(QDate.currentDate()); self.day.setCalendarPopup(True); top.addWidget(self.day); layout.addLayout(top)
-        layout.addWidget(QLabel('An additional password protects entries stored in your encrypted vault.',objectName='muted'))
-        self.edit=QTextEdit(); self.edit.setPlaceholderText('Unlock the diary to begin…'); self.edit.setEnabled(False); layout.addWidget(self.edit,1)
-        row=QHBoxLayout(); self.state=QLabel(objectName='muted'); row.addWidget(self.state); row.addStretch(); row.addWidget(button('Unlock',self.unlock)); row.addWidget(button('Save entry',self.save,'primary')); layout.addLayout(row)
-        self.day.dateChanged.connect(self.load)
+        self.setObjectName('page');layout=QVBoxLayout(self); layout.setContentsMargins(58,36,58,34);layout.setSpacing(14)
+        top=QHBoxLayout();head=QVBoxLayout();head.setSpacing(2);head.addWidget(QLabel('PERSONAL VAULT',objectName='eyebrow'));head.addWidget(QLabel('Private diary',objectName='pageTitle'));top.addLayout(head); top.addStretch(); self.day=QDateEdit(QDate.currentDate()); self.day.setCalendarPopup(True); top.addWidget(self.day); layout.addLayout(top)
+        notice=QFrame(objectName='panel');notice_row=QHBoxLayout(notice);notice_row.setContentsMargins(18,13,18,13);notice_row.addWidget(QLabel('◉',objectName='welcomeIcon'));notice_text=QVBoxLayout();notice_text.setSpacing(1);notice_text.addWidget(QLabel('Separate diary protection',objectName='emptyTitle'));notice_text.addWidget(QLabel('This space locks every time you leave it and uses its own password.',objectName='muted'));notice_row.addLayout(notice_text);notice_row.addStretch();self.state=QLabel('LOCKED',objectName='badge');notice_row.addWidget(self.state);layout.addWidget(notice)
+        editor_panel=QFrame(objectName='panel');editor_layout=QVBoxLayout(editor_panel);editor_layout.setContentsMargins(1,1,1,1);self.edit=QTextEdit(); self.edit.setPlaceholderText('Unlock the diary to begin…'); self.edit.setEnabled(False);editor_layout.addWidget(self.edit); layout.addWidget(editor_panel,1)
+        row=QHBoxLayout();self.words=QLabel('0 WORDS',objectName='muted');row.addWidget(self.words); row.addStretch();self.lock_button=button('Unlock diary',self.toggle_lock,'outline');row.addWidget(self.lock_button); row.addWidget(button('Save entry',self.save,'primary')); layout.addLayout(row)
+        self.day.dateChanged.connect(self.load);self.edit.textChanged.connect(self.update_count)
+    def toggle_lock(self):self.lock() if self.unlocked else self.unlock()
+    def update_count(self):self.words.setText(f'{len(self.edit.toPlainText().split())} WORDS')
     def unlock(self):
         import hashlib,hmac
         stored=self.db.get_setting(self.PASSWORD_SETTING)
@@ -608,13 +620,13 @@ class DiaryPage(QWidget):
             if not ok:return
             salt,digest=stored.split(':',1); valid=hmac.compare_digest(hashlib.pbkdf2_hmac('sha256',password.encode(),bytes.fromhex(salt),240000).hex(),digest)
         if not valid: QMessageBox.warning(self,'Access denied','Incorrect diary password.'); return
-        self.unlocked=True; self.edit.setEnabled(True); self.load()
+        self.unlocked=True; self.edit.setEnabled(True);self.lock_button.setText('Lock diary'); self.load();self.edit.setFocus()
     def lock(self):
         if self.unlocked:
             self.save()
-        self.unlocked=False;self.edit.clear();self.edit.setEnabled(False);self.edit.setPlaceholderText('Unlock the diary to begin…');self.state.setText('Locked')
+        self.unlocked=False;self.edit.clear();self.edit.setEnabled(False);self.edit.setPlaceholderText('Unlock the diary to begin…');self.state.setText('LOCKED');self.lock_button.setText('Unlock diary')
     def load(self):
-        if self.unlocked: self.edit.setPlainText(self.db.load_diary_entry(self.day.date().toString('yyyy-MM-dd'))); self.state.setText('Unlocked')
+        if self.unlocked: self.edit.setPlainText(self.db.load_diary_entry(self.day.date().toString('yyyy-MM-dd'))); self.state.setText('UNLOCKED')
     def save(self):
         if self.unlocked: self.db.save_diary_entry(self.day.date().toString('yyyy-MM-dd'),self.edit.toPlainText()); self.state.setText('Saved')
 

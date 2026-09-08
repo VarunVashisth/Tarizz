@@ -283,9 +283,17 @@ Because everything is local, backing up Tarizz means backing up this one directo
 | `Ctrl+B` | Toggle bold |
 | `Ctrl+I` | Toggle italic |
 | `Ctrl+U` | Toggle underline |
-| `Ctrl+H` / `Ctrl+Shift+H` | Toggle highlight |
+| `Ctrl+K` | Insert a link in the editor |
+| `Ctrl+Shift+F` | Focus global project search |
+| `Ctrl+N` | Create a project from anywhere |
+| `Alt+1` / `Alt+2` / `Alt+3` | Open Projects / Calendar / Diary |
+| `Ctrl+Alt+C` | Create an editable code block |
+| `Ctrl+Enter` | Exit the current code block |
+| `Ctrl+Shift+M` | Toggle Markdown preview |
+| `Ctrl+Shift+E` | Export the current page |
+| `Ctrl+Shift+V` | Paste without formatting |
 
-Font family, font size, and the bold/italic/underline/highlight actions are also available as toolbar buttons in the subpage editor, and work the same way whether triggered from the keyboard or the toolbar.
+Formatting, media insertion, preview, and export actions are also available from the subpage toolbar.
 
 ---
 
